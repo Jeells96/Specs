@@ -1,0 +1,1773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpecCheck — Submittal Compliance</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root {
+    --black: #0a0a0a;
+    --surface: #111111;
+    --surface2: #1a1a1a;
+    --surface3: #222222;
+    --border: #2a2a2a;
+    --green: #22c55e;
+    --green-dim: #16a34a;
+    --green-muted: #14532d;
+    --gold: #f59e0b;
+    --gold-dim: #d97706;
+    --gold-muted: #451a03;
+    --red: #ef4444;
+    --red-muted: #450a0a;
+    --text: #e5e5e5;
+    --text-dim: #737373;
+    --text-muted: #525252;
+    --radius: 6px;
+    --mono: 'Courier New', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--black);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 52px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-mark {
+    width: 28px;
+    height: 28px;
+    background: var(--green);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 13px;
+    color: #000;
+    letter-spacing: -1px;
+  }
+
+  .logo-text {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--text);
+  }
+
+  .logo-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 400;
+    margin-left: 2px;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .api-key-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .api-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+  }
+
+  input.api-input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 12px;
+    font-family: var(--mono);
+    padding: 5px 10px;
+    width: 220px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  input.api-input:focus { border-color: var(--green); }
+
+  .api-status {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .api-status.active { background: var(--green); }
+
+  /* ── Upload zone ── */
+  .upload-zone {
+    margin: 28px 24px 0;
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    padding: 32px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: var(--surface);
+    position: relative;
+  }
+
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--green); background: #0d1a12; }
+
+  .upload-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+
+  .upload-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+    display: block;
+  }
+
+  .upload-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+
+  .upload-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* ── Progress bar ── */
+  .progress-wrap {
+    margin: 12px 24px 0;
+    display: none;
+  }
+
+  .progress-wrap.show { display: block; }
+
+  .progress-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 5px;
+    font-family: var(--mono);
+  }
+
+  .progress-bar {
+    height: 3px;
+    background: var(--surface3);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--green);
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.3s;
+  }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    margin: 16px 24px 0;
+    display: none;
+    gap: 12px;
+  }
+
+  .stats-bar.show { display: flex; }
+
+  .stat-pill {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .stat-pill .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .stat-pill.needed .dot { background: var(--text-muted); }
+  .stat-pill.met .dot { background: var(--green); }
+  .stat-pill.partial .dot { background: var(--gold); }
+  .stat-pill.missing .dot { background: var(--red); }
+
+  /* ── Tabs ── */
+  .tabs-wrap {
+    margin: 20px 24px 0;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 0;
+  }
+
+  .tab-btn {
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 0.3px;
+    transition: color 0.15s, border-color 0.15s;
+    margin-bottom: -1px;
+  }
+
+  .tab-btn:hover { color: var(--text-dim); }
+  .tab-btn.active { color: var(--green); border-bottom-color: var(--green); }
+
+  .tab-count {
+    display: inline-block;
+    background: var(--surface3);
+    border-radius: 10px;
+    padding: 1px 6px;
+    font-size: 10px;
+    margin-left: 5px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  /* ── Main content ── */
+  .content {
+    padding: 20px 24px 60px;
+  }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── Empty state ── */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+  }
+
+  .empty-state .empty-icon { font-size: 36px; margin-bottom: 12px; display: block; }
+  .empty-state .empty-title { font-size: 14px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; }
+  .empty-state .empty-hint { font-size: 12px; }
+
+  /* ── Section cards ── */
+  .section-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+
+  .section-header {
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+  }
+
+  .section-header:hover { background: var(--surface2); }
+
+  .section-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-number {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--green);
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    background: var(--green-muted);
+    padding: 2px 7px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .section-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-progress {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+  }
+
+  .chevron {
+    color: var(--text-muted);
+    font-size: 12px;
+    transition: transform 0.2s;
+    flex-shrink: 0;
+  }
+
+  .section-card.open .chevron { transform: rotate(180deg); }
+
+  /* ── Section body ── */
+  .section-body {
+    display: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .section-card.open .section-body { display: block; }
+
+  /* ── Submittal line items ── */
+  .submittal-list {
+    padding: 4px 0;
+  }
+
+  .submittal-item {
+    padding: 8px 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .submittal-item:last-child { border-bottom: none; }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+
+  .status-needed .status-dot { background: var(--text-muted); }
+  .status-met .status-dot { background: var(--green); }
+  .status-partial .status-dot { background: var(--gold); }
+  .status-missing .status-dot { background: var(--red); }
+
+  .submittal-info { flex: 1; min-width: 0; }
+
+  .submittal-name {
+    font-size: 13px;
+    color: var(--text);
+    font-weight: 500;
+    line-height: 1.4;
+  }
+
+  .submittal-type {
+    font-size: 10px;
+    font-family: var(--mono);
+    color: var(--text-muted);
+    margin-top: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .submittal-note {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    line-height: 1.4;
+    font-style: italic;
+  }
+
+  .status-badge {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    font-family: var(--mono);
+    margin-top: 2px;
+  }
+
+  .status-needed .status-badge {
+    background: var(--surface3);
+    color: var(--text-muted);
+  }
+  .status-met .status-badge {
+    background: var(--green-muted);
+    color: var(--green);
+  }
+  .status-partial .status-badge {
+    background: var(--gold-muted);
+    color: var(--gold);
+  }
+  .status-missing .status-badge {
+    background: var(--red-muted);
+    color: var(--red);
+  }
+
+  /* ── Upload button per section ── */
+  .section-upload-area {
+    padding: 10px 16px 12px;
+    background: var(--surface2);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .upload-btn {
+    background: var(--surface3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .upload-btn:hover { border-color: var(--green); color: var(--green); background: #0d1a12; }
+  .upload-btn input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  }
+
+  .upload-btn.loading {
+    pointer-events: none;
+    color: var(--text-muted);
+    border-color: var(--border);
+  }
+
+  .uploaded-file {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .uploaded-file .file-name {
+    color: var(--green-dim);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .checking-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--black); }
+  ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
+
+  /* ── Notification toast ── */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--text);
+    z-index: 999;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.2s, transform 0.2s;
+    max-width: 320px;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.success { border-color: var(--green-dim); }
+  .toast.error { border-color: var(--red); }
+
+  /* ── Back button + current job ── */
+  .back-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .back-btn:hover { border-color: var(--green); color: var(--green); }
+
+  .current-job {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gold);
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── Jobs home ── */
+  .jobs-hero { padding: 40px 24px 20px; }
+  .jobs-title { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 6px; }
+  .jobs-subtitle { font-size: 13px; color: var(--text-dim); max-width: 520px; line-height: 1.5; }
+
+  .jobs-grid {
+    padding: 8px 24px 60px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px;
+  }
+
+  .job-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.1s;
+    position: relative;
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+  }
+  .job-card:hover { border-color: var(--green); transform: translateY(-1px); }
+
+  .job-card.new-job {
+    border-style: dashed;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--text-muted);
+  }
+  .job-card.new-job:hover { color: var(--green); }
+  .job-card.new-job .plus { font-size: 28px; margin-bottom: 6px; }
+  .job-card.new-job .new-label { font-size: 13px; font-weight: 600; }
+
+  .job-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 6px;
+    line-height: 1.3;
+  }
+  .job-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+    margin-bottom: 12px;
+  }
+  .job-stats {
+    margin-top: auto;
+    display: flex;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .job-stats .js { display: flex; align-items: center; gap: 4px; }
+  .job-stats .js .d { width: 6px; height: 6px; border-radius: 50%; }
+  .job-stats .js.met .d { background: var(--green); }
+  .job-stats .js.partial .d { background: var(--gold); }
+  .job-stats .js.needed .d { background: var(--text-muted); }
+
+  .job-delete {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, background 0.15s;
+  }
+  .job-card:hover .job-delete { opacity: 1; }
+  .job-delete:hover { color: var(--red); background: var(--red-muted); }
+
+  /* ── Page reference link ── */
+  .page-ref {
+    font-size: 10px;
+    font-family: var(--mono);
+    color: var(--gold);
+    background: var(--gold-muted);
+    padding: 2px 7px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .page-ref:hover { background: var(--gold-dim); color: #000; }
+
+  /* ── Section detail page ── */
+  .detail-head {
+    padding: 28px 24px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .detail-crumb {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .detail-title-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .detail-number {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--green);
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    background: var(--green-muted);
+    padding: 4px 10px;
+    border-radius: 5px;
+    flex-shrink: 0;
+  }
+  .detail-title {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+    line-height: 1.2;
+    flex: 1;
+    min-width: 200px;
+  }
+  .detail-summary {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .summary-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+  }
+  .summary-chip .n { font-family: var(--mono); font-weight: 700; }
+  .summary-chip.matched { background: var(--green-muted); color: var(--green); border-color: var(--green-dim); }
+  .summary-chip.partial { background: var(--gold-muted); color: var(--gold); border-color: var(--gold-dim); }
+  .summary-chip.missing { background: var(--red-muted); color: var(--red); border-color: var(--red); }
+  .summary-chip.needed  { background: var(--surface3); color: var(--text-dim); }
+
+  .detail-body { padding: 22px 24px 60px; }
+
+  .result-group { margin-bottom: 26px; }
+  .result-group:last-child { margin-bottom: 0; }
+
+  .group-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .group-icon {
+    width: 22px; height: 22px;
+    border-radius: 5px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800;
+    flex-shrink: 0;
+  }
+  .group-matched .group-icon { background: var(--green-muted); color: var(--green); }
+  .group-partial .group-icon { background: var(--gold-muted); color: var(--gold); }
+  .group-missing .group-icon { background: var(--red-muted); color: var(--red); }
+  .group-needed  .group-icon { background: var(--surface3); color: var(--text-dim); }
+
+  .group-title { font-size: 14px; font-weight: 700; }
+  .group-subtitle { font-size: 11px; color: var(--text-muted); margin-left: auto; font-family: var(--mono); }
+
+  .result-item {
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+  .result-item:last-child { margin-bottom: 0; }
+  .result-name { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.4; }
+  .result-type {
+    font-size: 10px; font-family: var(--mono); color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px;
+  }
+  .result-note {
+    font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.5;
+    padding-top: 8px; border-top: 1px solid var(--border);
+  }
+  .result-group.group-matched .result-item { border-left: 2px solid var(--green); }
+  .result-group.group-partial .result-item { border-left: 2px solid var(--gold); }
+  .result-group.group-missing .result-item { border-left: 2px solid var(--red); }
+  .result-group.group-needed  .result-item { border-left: 2px solid var(--text-muted); }
+
+  .detail-upload {
+    margin-top: 24px;
+    padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .detail-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted);
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+  }
+  .detail-empty .de-icon { font-size: 28px; display: block; margin-bottom: 8px; }
+  .detail-empty .de-title { font-size: 14px; font-weight: 600; color: var(--text-dim); margin-bottom: 4px; }
+  .detail-empty .de-hint { font-size: 12px; }
+
+  /* Make section cards in the list look clickable / navigable */
+  .section-card.navigable .section-header { cursor: pointer; }
+  .nav-arrow { color: var(--text-muted); font-size: 13px; flex-shrink: 0; }
+  .section-card.navigable:hover { border-color: var(--green-dim); }
+
+  /* ── Submittal files legend ── */
+  .submittal-files {
+    margin-top: 16px;
+    padding: 12px 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .sf-title {
+    font-size: 10px; font-family: var(--mono); color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
+  }
+  .sf-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
+  .sf-label {
+    font-size: 11px; font-weight: 700; font-family: var(--mono);
+    color: var(--green); background: var(--green-muted);
+    padding: 2px 8px; border-radius: 4px; flex-shrink: 0; min-width: 92px;
+  }
+  .sf-name { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── Required vs Found two-column ── */
+  .req-found {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    margin-top: 8px;
+    background: var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .rf-col { background: var(--surface2); padding: 10px 12px; }
+  .rf-label {
+    font-size: 9px; font-family: var(--mono); text-transform: uppercase;
+    letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 6px;
+  }
+  .rf-required .rf-label { color: var(--text-dim); }
+  .rf-found .rf-label { color: var(--gold); }
+  .rf-body { font-size: 12px; line-height: 1.5; color: var(--text); }
+  .rf-required .rf-body { color: var(--text-dim); }
+
+  .found-source {
+    font-size: 11px; font-weight: 600; color: var(--green);
+    margin-bottom: 5px; font-family: var(--mono);
+  }
+  .found-text { color: var(--text); }
+  .found-text.missing-text { color: var(--red); }
+  .found-text.muted-text { color: var(--text-muted); font-style: italic; }
+
+  @media (max-width: 640px) {
+    .req-found { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-mark">SC</div>
+    <div>
+      <span class="logo-text">SpecCheck</span>
+      <span class="logo-sub">Submittal Compliance · <span id="versionLabel">v1.1</span></span>
+    </div>
+  </div>
+  <div class="header-right">
+    <button class="back-btn" id="backBtn" onclick="showJobsHome()" style="display:none">← Jobs</button>
+    <span class="current-job" id="currentJobName"></span>
+    <div class="api-key-wrap">
+      <span class="api-label">GEMINI KEY</span>
+      <div class="api-status" id="apiStatus"></div>
+      <input class="api-input" type="password" id="apiKeyInput" placeholder="AIza..." autocomplete="off">
+    </div>
+  </div>
+</header>
+
+<!-- ═══ JOBS HOME ═══ -->
+<div id="jobsHome">
+  <div class="jobs-hero">
+    <h1 class="jobs-title">Your Jobs</h1>
+    <p class="jobs-subtitle">Pick a job to work on, or start a new one. Each job keeps its own spec and submittal checklist.</p>
+  </div>
+  <div class="jobs-grid" id="jobsGrid"></div>
+</div>
+
+<!-- ═══ WORKSPACE ═══ -->
+<div id="workspace" style="display:none">
+<div class="upload-zone" id="uploadZone">
+  <input type="file" id="specFileInput" accept=".pdf">
+  <span class="upload-icon">📋</span>
+  <div class="upload-title">Upload Project Spec</div>
+  <div class="upload-hint">Drop a PDF or click to browse — Division 22 &amp; 23 will be parsed automatically</div>
+</div>
+
+<div class="progress-wrap" id="progressWrap">
+  <div class="progress-label" id="progressLabel">Extracting text…</div>
+  <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+</div>
+
+<div class="stats-bar" id="statsBar">
+  <div class="stat-pill needed"><span class="dot"></span><span id="statNeeded">0</span> Needed</div>
+  <div class="stat-pill met"><span class="dot"></span><span id="statMet">0</span> Met</div>
+  <div class="stat-pill partial"><span class="dot"></span><span id="statPartial">0</span> Partial</div>
+  <div class="stat-pill missing"><span class="dot"></span><span id="statMissing">0</span> Missing</div>
+</div>
+
+<div class="tabs-wrap" id="tabsWrap" style="display:none">
+  <button class="tab-btn active" onclick="switchTab('div22')">
+    Division 22 — Plumbing <span class="tab-count" id="count22">0</span>
+  </button>
+  <button class="tab-btn" onclick="switchTab('div23')">
+    Division 23 — HVAC <span class="tab-count" id="count23">0</span>
+  </button>
+</div>
+
+<div class="content">
+  <div class="tab-panel active" id="panel-div22">
+    <div class="empty-state">
+      <span class="empty-icon">🔧</span>
+      <div class="empty-title">No spec loaded</div>
+      <div class="empty-hint">Upload a project spec PDF above to generate your submittal checklist</div>
+    </div>
+  </div>
+  <div class="tab-panel" id="panel-div23">
+    <div class="empty-state">
+      <span class="empty-icon">🌡️</span>
+      <div class="empty-title">No spec loaded</div>
+      <div class="empty-hint">Upload a project spec PDF above to generate your submittal checklist</div>
+    </div>
+  </div>
+</div>
+</div>
+<!-- ═══ END WORKSPACE ═══ -->
+
+<!-- ═══ SECTION DETAIL ═══ -->
+<div id="sectionDetail" style="display:none"></div>
+<!-- ═══ END SECTION DETAIL ═══ -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── PDF.js setup ──
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ── Version ──
+const APP_VERSION = 'v1.3.1';
+document.getElementById('versionLabel').textContent = APP_VERSION;
+
+// ── State ──
+let specSections = { div22: [], div23: [] };
+let apiKey = '';
+let jobs = [];              // all saved jobs
+let currentJob = null;      // the job being worked on
+let currentPdfUrl = null;   // blob URL of current job's spec PDF (for page links)
+let detailSectionId = null; // id of section open on the detail page
+
+// ── Job persistence (localStorage) ──
+// PDFs are stored as base64 data URLs so page links survive reloads.
+function loadJobs() {
+  try {
+    jobs = JSON.parse(localStorage.getItem('speccheck_jobs') || '[]');
+  } catch { jobs = []; }
+}
+
+function saveJobs() {
+  // Persist everything EXCEPT the transient blob URL
+  const toSave = jobs.map(j => ({
+    id: j.id,
+    name: j.name,
+    created: j.created,
+    pdfData: j.pdfData || null,
+    pageCount: j.pageCount || 0,
+    sections: j.sections || { div22: [], div23: [] }
+  }));
+  try {
+    localStorage.setItem('speccheck_jobs', JSON.stringify(toSave));
+  } catch (e) {
+    showToast('Could not save — storage may be full (large PDF)', 'error');
+  }
+}
+
+function persistCurrentJob() {
+  if (!currentJob) return;
+  currentJob.sections = specSections;
+  const idx = jobs.findIndex(j => j.id === currentJob.id);
+  if (idx >= 0) jobs[idx] = currentJob;
+  saveJobs();
+}
+
+// ── API Key ──
+const apiKeyInput = document.getElementById('apiKeyInput');
+const apiStatus = document.getElementById('apiStatus');
+
+function loadApiKey() {
+  const saved = localStorage.getItem('speccheck_gemini_key');
+  if (saved) { apiKeyInput.value = saved; apiKey = saved; apiStatus.classList.add('active'); }
+}
+
+apiKeyInput.addEventListener('input', () => {
+  apiKey = apiKeyInput.value.trim();
+  localStorage.setItem('speccheck_gemini_key', apiKey);
+  apiStatus.classList.toggle('active', apiKey.length > 10);
+});
+
+loadApiKey();
+
+// ── Jobs home rendering & navigation ──
+function showJobsHome() {
+  document.getElementById('jobsHome').style.display = 'block';
+  document.getElementById('workspace').style.display = 'none';
+  document.getElementById('sectionDetail').style.display = 'none';
+  document.getElementById('backBtn').style.display = 'none';
+  document.getElementById('currentJobName').textContent = '';
+  currentJob = null;
+  detailSectionId = null;
+  renderJobsGrid();
+}
+
+function renderJobsGrid() {
+  const grid = document.getElementById('jobsGrid');
+  let html = '';
+
+  for (const job of jobs) {
+    const all = [...(job.sections?.div22 || []), ...(job.sections?.div23 || [])];
+    const items = all.flatMap(s => s.submittals || []);
+    const met = items.filter(i => i.status === 'met').length;
+    const partial = items.filter(i => i.status === 'partial').length;
+    const needed = items.filter(i => i.status === 'needed').length;
+    const date = new Date(job.created).toLocaleDateString();
+    const secCount = all.length;
+
+    html += `<div class="job-card" onclick="openJob('${job.id}')">
+      <button class="job-delete" onclick="event.stopPropagation(); deleteJob('${job.id}')" title="Delete job">✕</button>
+      <div class="job-name">${escapeHtml(job.name)}</div>
+      <div class="job-meta">${secCount} sections · ${date}</div>
+      <div class="job-stats">
+        <span class="js met"><span class="d"></span>${met}</span>
+        <span class="js partial"><span class="d"></span>${partial}</span>
+        <span class="js needed"><span class="d"></span>${needed}</span>
+      </div>
+    </div>`;
+  }
+
+  html += `<div class="job-card new-job" onclick="createJob()">
+    <span class="plus">+</span>
+    <span class="new-label">New Job</span>
+  </div>`;
+
+  grid.innerHTML = html;
+}
+
+function createJob() {
+  const name = prompt('Job name (e.g. "Adventist Health Columbia Gorge"):');
+  if (!name || !name.trim()) return;
+  const job = {
+    id: 'job_' + Date.now(),
+    name: name.trim(),
+    created: Date.now(),
+    pdfData: null,
+    pageCount: 0,
+    sections: { div22: [], div23: [] }
+  };
+  jobs.unshift(job);
+  saveJobs();
+  openJob(job.id);
+}
+
+function openJob(id) {
+  const job = jobs.find(j => j.id === id);
+  if (!job) return;
+  currentJob = job;
+  specSections = job.sections && (job.sections.div22 || job.sections.div23)
+    ? job.sections : { div22: [], div23: [] };
+
+  // Restore PDF blob URL for page links
+  if (currentPdfUrl) { URL.revokeObjectURL(currentPdfUrl); currentPdfUrl = null; }
+  if (job.pdfData) {
+    currentPdfUrl = dataUrlToBlobUrl(job.pdfData);
+    window.__pdfPageCount = job.pageCount || 1;
+  }
+
+  document.getElementById('jobsHome').style.display = 'none';
+  document.getElementById('sectionDetail').style.display = 'none';
+  document.getElementById('workspace').style.display = 'block';
+  document.getElementById('backBtn').style.display = 'inline-block';
+  document.getElementById('currentJobName').textContent = job.name;
+
+  const hasSections = specSections.div22.length || specSections.div23.length;
+  if (hasSections) {
+    renderAll();
+  } else {
+    // fresh job — reset workspace
+    document.getElementById('tabsWrap').style.display = 'none';
+    document.getElementById('statsBar').classList.remove('show');
+    resetPanels();
+  }
+}
+
+function deleteJob(id) {
+  const job = jobs.find(j => j.id === id);
+  if (!job) return;
+  if (!confirm(`Delete "${job.name}"? This cannot be undone.`)) return;
+  jobs = jobs.filter(j => j.id !== id);
+  saveJobs();
+  renderJobsGrid();
+}
+
+function resetPanels() {
+  document.getElementById('panel-div22').innerHTML = `<div class="empty-state">
+    <span class="empty-icon">🔧</span>
+    <div class="empty-title">No spec loaded</div>
+    <div class="empty-hint">Upload a project spec PDF above to generate your submittal checklist</div>
+  </div>`;
+  document.getElementById('panel-div23').innerHTML = `<div class="empty-state">
+    <span class="empty-icon">🌡️</span>
+    <div class="empty-title">No spec loaded</div>
+    <div class="empty-hint">Upload a project spec PDF above to generate your submittal checklist</div>
+  </div>`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function dataUrlToBlobUrl(dataUrl) {
+  const [meta, b64] = dataUrl.split(',');
+  const mime = (meta.match(/:(.*?);/) || [])[1] || 'application/pdf';
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([arr], { type: mime }));
+}
+
+function fileToDataUrl(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+// ── Open spec PDF at a specific page ──
+function openSpecAtPage(page) {
+  if (!currentPdfUrl) { showToast('Spec PDF not available for this job', 'error'); return; }
+  window.open(currentPdfUrl + '#page=' + page, '_blank');
+}
+
+// Init
+loadJobs();
+showJobsHome();
+
+// ── Drag and drop ──
+const uploadZone = document.getElementById('uploadZone');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type === 'application/pdf') processSpec(file);
+  else showToast('Please drop a PDF file', 'error');
+});
+
+document.getElementById('specFileInput').addEventListener('change', e => {
+  if (e.target.files[0]) processSpec(e.target.files[0]);
+});
+
+// ── Extract text from PDF ──
+async function extractPdfText(file, onProgress, storePageCount) {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  if (storePageCount) window.__pdfPageCount = pdf.numPages;
+  let fullText = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map(item => item.str).join(' ');
+    fullText += pageText + '\n';
+    if (onProgress) onProgress(i / pdf.numPages);
+  }
+  return fullText;
+}
+
+// ── Parse sections from extracted text ──
+function parseSections(text) {
+  const sections = [];
+
+  // Find positions of each section header. Capture a generous chunk after the
+  // dash; cleanTitle() trims it back to the real title (PDF.js gives no real
+  // newlines, so we cut at structural keywords instead).
+  const rawMatches = [];
+  let m;
+  const re2 = /SECTION\s+(2[23]\s*\d{2}\s*\d{2}(?:\.\d+)?)\s*[-–]\s*([A-Z].{3,120})/gi;
+  while ((m = re2.exec(text)) !== null) {
+    rawMatches.push({ index: m.index, number: m[1].replace(/\s+/g, ' ').trim(), rawTitle: m[2], end: m.index + m[0].length });
+  }
+
+  // Deduplicate by section number (keep first occurrence)
+  const seen = new Set();
+  const unique = rawMatches.filter(mm => {
+    const key = mm.number.replace(/\s/g, '');
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  });
+
+  for (let i = 0; i < unique.length; i++) {
+    const start = unique[i].end;
+    const end = i + 1 < unique.length ? unique[i + 1].index : text.length;
+    const body = text.slice(start, Math.min(end, start + 15000));
+    const submittals = extractSubmittals(body);
+    if (submittals.length === 0) continue;
+
+    const num = unique[i].number.replace(/\s/g, '');
+    const div = num.startsWith('22') ? 'div22' : num.startsWith('23') ? 'div23' : null;
+    if (!div) continue;
+
+    // Approx page number from character offset (PDF.js text has no form feeds)
+    const charsPerPage = text.length / (window.__pdfPageCount || 1);
+    const approxPage = Math.max(1, Math.round(unique[i].index / charsPerPage) + 1);
+
+    sections.push({
+      id: 'sec_' + num,
+      number: unique[i].number,
+      title: cleanTitle(unique[i].rawTitle),
+      div,
+      submittals,
+      uploadedFile: null,
+      open: false,
+      approxPage
+    });
+  }
+
+  return sections;
+}
+
+function cleanTitle(raw) {
+  // raw may contain the title plus bleed-over body text. Cut at the first
+  // structural keyword that marks the end of the title.
+  let t = raw.replace(/\s+/g, ' ').trim();
+
+  const stopPatterns = [
+    /\bPART\s+\d/i,
+    /\b\d\.\d{1,2}\b/,
+    /\bGENERAL\b/i,
+    /\bRELATED\s+DOCUMENT/i,
+    /\bSUMMARY\b/i,
+    /\bAdventist\b/i,
+    /\bProject\s*#/i,
+    /\bENERGY\s+IMPROVEMENTS\b/i
+  ];
+  let cutAt = t.length;
+  for (const p of stopPatterns) {
+    const mm = t.match(p);
+    if (mm && mm.index !== undefined && mm.index < cutAt && mm.index > 2) cutAt = mm.index;
+  }
+  t = t.slice(0, cutAt).trim().replace(/[-–\s]+$/, '').trim();
+
+  return t.replace(/[^\w\s,\-–\/&().]/g, '')
+    .split(' ').filter(Boolean)
+    .map(w => w.length <= 3 && w === w.toUpperCase() ? w : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+// ── Extract submittal line items from section text ──
+function extractSubmittals(text) {
+  const submittals = [];
+
+  // Find ACTION SUBMITTALS block
+  const actionMatch = text.match(/ACTION\s+SUBMITTALS?([\s\S]{0,4500}?)(?=INFORMATIONAL\s+SUBMITTALS?|CLOSEOUT\s+SUBMITTALS?|QUALITY\s+ASSURANCE|PART\s+2|$)/i);
+  if (actionMatch) {
+    parseSubmittalBlock(actionMatch[1], 'Action Submittal', submittals);
+  }
+
+  // Find INFORMATIONAL SUBMITTALS block
+  const infoMatch = text.match(/INFORMATIONAL\s+SUBMITTALS?([\s\S]{0,4500}?)(?=CLOSEOUT\s+SUBMITTALS?|MAINTENANCE\s+MATERIAL|QUALITY\s+ASSURANCE|PART\s+2|$)/i);
+  if (infoMatch) {
+    parseSubmittalBlock(infoMatch[1], 'Informational Submittal', submittals);
+  }
+
+  // Find CLOSEOUT SUBMITTALS
+  const closeoutMatch = text.match(/CLOSEOUT\s+SUBMITTALS?([\s\S]{0,3000}?)(?=MAINTENANCE\s+MATERIAL|QUALITY\s+ASSURANCE|PART\s+2|$)/i);
+  if (closeoutMatch) {
+    parseSubmittalBlock(closeoutMatch[1], 'Closeout Submittal', submittals);
+  }
+
+  return submittals;
+}
+
+function parseSubmittalBlock(text, type, out) {
+  // PDF.js joins everything with spaces (no real newlines). Split on the
+  // lettered article markers (" A. ", " B. ") but KEEP the full text after each
+  // marker up to the next marker — that's the verbatim requirement.
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  const broken = cleaned.replace(/(^|\s)([A-Z])\.\s+(?=[A-Z])/g, '\n$2. ');
+  const lines = broken.split('\n').map(l => l.trim()).filter(Boolean);
+
+  for (const line of lines) {
+    const letterMatch = line.match(/^([A-Z])\.\s+(.+)/);
+    if (!letterMatch) continue;
+
+    // Full verbatim requirement text (lead line + any sub-bullets that followed)
+    let requirement = letterMatch[2].replace(/\s+/g, ' ').trim();
+    // Strip page-footer noise like "22 0529 - 3"
+    requirement = requirement.replace(/\s*\d{2}\s?\d{2}\s?\d{2}(?:\.\d+)?\s*-\s*\d+\s*$/,'').trim();
+
+    // Short display name = text up to the first sentence break / colon / sub-item
+    let name = requirement;
+    const cut = name.search(/(?<=\w)[:.]\s|\s\d+\.\s/);
+    if (cut > 3) name = name.slice(0, cut).trim();
+    name = name.replace(/[:.]?\s*$/, '').trim();
+
+    if (requirement.length > 3 && requirement.length < 1200 && name.length > 2) {
+      out.push({
+        id: Math.random().toString(36).slice(2),
+        name: name.slice(0, 140),
+        requirement,            // verbatim spec text
+        type,
+        status: 'needed',
+        note: '',
+        foundIn: null           // {submittalId, submittalName, found} once satisfied
+      });
+    }
+  }
+
+  // Deduplicate by first 30 chars of name
+  const unique = [];
+  for (const item of out) {
+    if (!unique.find(u => u.name.slice(0, 30).toLowerCase() === item.name.slice(0, 30).toLowerCase())) {
+      unique.push(item);
+    }
+  }
+  out.length = 0;
+  out.push(...unique);
+}
+
+// ── Main spec processing ──
+async function processSpec(file) {
+  if (!currentJob) { showToast('Open or create a job first', 'error'); return; }
+  setProgress(true, 'Reading PDF…', 5);
+  specSections = { div22: [], div23: [] };
+
+  try {
+    const text = await extractPdfText(file, p => setProgress(true, `Extracting text… page ${Math.round(p * 100)}%`, p * 80), true);
+    setProgress(true, 'Parsing Division 22 & 23 sections…', 85);
+
+    const all = parseSections(text);
+    all.forEach(s => specSections[s.div].push(s));
+
+    setProgress(true, 'Saving spec to job…', 92);
+    // Store the PDF in the job for page links + reload persistence
+    const dataUrl = await fileToDataUrl(file);
+    currentJob.pdfData = dataUrl;
+    currentJob.pageCount = window.__pdfPageCount || 0;
+    currentJob.sections = specSections;
+    if (currentPdfUrl) URL.revokeObjectURL(currentPdfUrl);
+    currentPdfUrl = dataUrlToBlobUrl(dataUrl);
+    persistCurrentJob();
+
+    setProgress(true, 'Building checklist…', 97);
+    await sleep(150);
+    setProgress(false);
+
+    renderAll();
+    showToast(`Loaded ${all.length} sections (${specSections.div22.length} Plumbing, ${specSections.div23.length} HVAC)`, 'success');
+  } catch (err) {
+    setProgress(false);
+    showToast('Error reading PDF: ' + err.message, 'error');
+    console.error(err);
+  }
+}
+
+// ── Render everything ──
+function renderAll() {
+  document.getElementById('tabsWrap').style.display = 'flex';
+  document.getElementById('count22').textContent = specSections.div22.length;
+  document.getElementById('count23').textContent = specSections.div23.length;
+
+  renderPanel('div22');
+  renderPanel('div23');
+  updateStats();
+}
+
+function renderPanel(div) {
+  const panel = document.getElementById('panel-' + div);
+  const sections = specSections[div];
+
+  if (sections.length === 0) {
+    panel.innerHTML = `<div class="empty-state">
+      <span class="empty-icon">${div === 'div22' ? '🔧' : '🌡️'}</span>
+      <div class="empty-title">No sections found</div>
+      <div class="empty-hint">No Division ${div === 'div22' ? '22' : '23'} submittal requirements found in this spec</div>
+    </div>`;
+    return;
+  }
+
+  panel.innerHTML = sections.map(s => renderSectionCard(s)).join('');
+}
+
+function renderSectionCard(s) {
+  const total = s.submittals.length;
+  const met = s.submittals.filter(x => x.status === 'met').length;
+  const partial = s.submittals.filter(x => x.status === 'partial').length;
+  const missing = s.submittals.filter(x => x.status === 'missing').length;
+
+  let progressText;
+  if ((s.submittalFiles && s.submittalFiles.length) || s.uploadedFile) {
+    const bits = [];
+    if (met) bits.push(`${met} matched`);
+    if (partial) bits.push(`${partial} partial`);
+    if (missing) bits.push(`${missing} missing`);
+    progressText = bits.length ? bits.join(' · ') : `${total} required`;
+  } else {
+    progressText = `${total} required`;
+  }
+
+  const pageRefHtml = s.approxPage
+    ? `<a class="page-ref" onclick="event.stopPropagation(); openSpecAtPage(${s.approxPage})" title="Open spec PDF near this section">PDF p.${s.approxPage} ↗</a>`
+    : '';
+
+  return `<div class="section-card navigable" id="${s.id}" onclick="openSection('${s.id}')">
+    <div class="section-header">
+      <div class="section-left">
+        <span class="section-number">${s.number}</span>
+        <span class="section-title">${s.title}</span>
+      </div>
+      <div class="section-right">
+        ${pageRefHtml}
+        <span class="section-progress">${progressText}</span>
+        <span class="nav-arrow">›</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Section detail page ──
+function openSection(id) {
+  const all = [...specSections.div22, ...specSections.div23];
+  const s = all.find(x => x.id === id);
+  if (!s) return;
+  detailSectionId = id;
+
+  document.getElementById('workspace').style.display = 'none';
+  document.getElementById('jobsHome').style.display = 'none';
+  document.getElementById('sectionDetail').style.display = 'block';
+  document.getElementById('backBtn').style.display = 'none';
+  document.getElementById('currentJobName').textContent = currentJob ? currentJob.name : '';
+
+  renderSectionDetail(s);
+  window.scrollTo(0, 0);
+}
+
+function backToSectionList() {
+  detailSectionId = null;
+  document.getElementById('sectionDetail').style.display = 'none';
+  document.getElementById('workspace').style.display = 'block';
+  document.getElementById('backBtn').style.display = 'inline-block';
+  // re-render list so card summaries reflect any changes
+  renderAll();
+  // keep the right tab active based on the section we came from
+}
+
+function renderSectionDetail(s) {
+  const matched = s.submittals.filter(x => x.status === 'met');
+  const partial = s.submittals.filter(x => x.status === 'partial');
+  const missing = s.submittals.filter(x => x.status === 'missing');
+  const needed  = s.submittals.filter(x => x.status === 'needed');
+
+  const files = s.submittalFiles || [];
+  const hasUploads = files.length > 0;
+
+  const pageRefHtml = s.approxPage
+    ? `<a class="page-ref" onclick="openSpecAtPage(${s.approxPage})" title="Open spec PDF near this section">PDF p.${s.approxPage} ↗</a>`
+    : '';
+
+  const summaryChips = `
+    <div class="summary-chip matched"><span class="n">${matched.length}</span> Ready</div>
+    <div class="summary-chip partial"><span class="n">${partial.length}</span> Partial</div>
+    <div class="summary-chip missing"><span class="n">${missing.length}</span> Missing</div>
+    ${needed.length ? `<div class="summary-chip needed"><span class="n">${needed.length}</span> Not checked</div>` : ''}
+  `;
+
+  // Uploaded submittals legend
+  const filesHtml = hasUploads ? `
+    <div class="submittal-files">
+      <div class="sf-title">Uploaded submittals</div>
+      ${files.map(f => `<div class="sf-row"><span class="sf-label">${escapeHtml(f.label)}</span><span class="sf-name">${escapeHtml(f.name)}</span></div>`).join('')}
+    </div>` : '';
+
+  // Groups in priority order: missing first (action needed), then partial, needed, then ready
+  const groups = [];
+  if (missing.length) groups.push(renderResultGroup('missing', '✕', 'Still Needed — source or request these', missing));
+  if (partial.length) groups.push(renderResultGroup('partial', '!', 'Partial — incomplete, needs follow-up', partial));
+  if (needed.length && hasUploads) groups.push(renderResultGroup('needed', '·', 'Not Yet Checked', needed));
+  if (matched.length) groups.push(renderResultGroup('matched', '✓', 'Ready for Approval — satisfied by submittal', matched));
+
+  let bodyContent;
+  if (!hasUploads) {
+    bodyContent = `<div class="detail-empty">
+      <span class="de-icon">📎</span>
+      <div class="de-title">No submittal uploaded yet</div>
+      <div class="de-hint">Upload vendor submittals below. The spec requirements are listed so you know what to send.</div>
+    </div>
+    <div class="result-group group-needed">
+      <div class="group-header">
+        <div class="group-icon">·</div>
+        <div class="group-title">Required Submittals</div>
+        <div class="group-subtitle">${s.submittals.length} items</div>
+      </div>
+      ${s.submittals.map(renderResultItem).join('')}
+    </div>`;
+  } else {
+    bodyContent = groups.join('');
+  }
+
+  const btnLabel = hasUploads ? 'Add Another Submittal' : 'Upload Submittal';
+
+  document.getElementById('sectionDetail').innerHTML = `
+    <div class="detail-head">
+      <div class="detail-crumb">
+        <button class="back-btn" onclick="backToSectionList()">← ${escapeHtml(currentJob ? currentJob.name : 'Sections')}</button>
+        <button class="back-btn" onclick="showJobsHome()">Jobs</button>
+      </div>
+      <div class="detail-title-row">
+        <span class="detail-number">${s.number}</span>
+        <span class="detail-title">${s.title}</span>
+        ${pageRefHtml}
+      </div>
+      <div class="detail-summary">${summaryChips}</div>
+      ${filesHtml}
+    </div>
+    <div class="detail-body">
+      ${bodyContent}
+      <div class="detail-upload">
+        <label class="upload-btn" id="btn_${s.id}">
+          📎 ${btnLabel}
+          <input type="file" accept=".pdf" onchange="handleSubmittalUpload('${s.id}', this)">
+        </label>
+        <span id="spinner_${s.id}" style="display:none"><span class="checking-spinner"></span> Checking against spec…</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderResultGroup(type, icon, title, items) {
+  return `<div class="result-group group-${type}">
+    <div class="group-header">
+      <div class="group-icon">${icon}</div>
+      <div class="group-title">${title}</div>
+      <div class="group-subtitle">${items.length} ${items.length === 1 ? 'item' : 'items'}</div>
+    </div>
+    ${items.map(renderResultItem).join('')}
+  </div>`;
+}
+
+function renderResultItem(item) {
+  const reqText = item.requirement || item.name;
+
+  // "Found" column content depends on status
+  let foundHtml;
+  if (item.status === 'met' || item.status === 'partial') {
+    const src = item.foundIn;
+    const srcTag = src
+      ? `<div class="found-source">✓ ${escapeHtml(src.submittalLabel)} — ${escapeHtml(src.submittalName)}</div>`
+      : '';
+    const foundText = (src && src.found) ? escapeHtml(src.found) : (item.note ? escapeHtml(item.note) : 'Addressed in submittal');
+    foundHtml = `${srcTag}<div class="found-text">${foundText}</div>`;
+  } else if (item.status === 'missing') {
+    foundHtml = `<div class="found-text missing-text">Not found in any uploaded submittal${item.note ? ' — ' + escapeHtml(item.note) : ''}</div>`;
+  } else {
+    foundHtml = `<div class="found-text muted-text">Not checked yet</div>`;
+  }
+
+  return `<div class="result-item">
+    <div class="result-type">${item.type}</div>
+    <div class="req-found">
+      <div class="rf-col rf-required">
+        <div class="rf-label">Required (spec)</div>
+        <div class="rf-body">${escapeHtml(reqText)}</div>
+      </div>
+      <div class="rf-col rf-found">
+        <div class="rf-label">Found (submittal)</div>
+        <div class="rf-body">${foundHtml}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Refresh whichever view is showing this section ──
+function refreshSectionView(section) {
+  if (detailSectionId === section.id &&
+      document.getElementById('sectionDetail').style.display === 'block') {
+    renderSectionDetail(section);
+  } else {
+    const card = document.getElementById(section.id);
+    if (card) card.outerHTML = renderSectionCard(section);
+  }
+}
+
+// ── Handle submittal upload per section (append + gap-fill) ──
+async function handleSubmittalUpload(sectionId, input) {
+  if (!input.files[0]) return;
+
+  const file = input.files[0];
+  const all = [...specSections.div22, ...specSections.div23];
+  const section = all.find(s => s.id === sectionId);
+  if (!section) return;
+
+  // Section keeps a list of uploaded submittals
+  if (!section.submittalFiles) section.submittalFiles = [];
+  const submittalIndex = section.submittalFiles.length + 1;
+  const submittalId = 'sub_' + Date.now();
+  const submittalLabel = `Submittal ${submittalIndex}`;
+  section.submittalFiles.push({ id: submittalId, name: file.name, label: submittalLabel });
+
+  // If no API key, just record the upload and stop
+  if (!apiKey) {
+    persistCurrentJob();
+    refreshSectionView(section);
+    showToast(`Attached ${file.name} as ${submittalLabel} (no API key — check skipped)`, '');
+    return;
+  }
+
+  const spinner = document.getElementById('spinner_' + sectionId);
+  const btn = document.getElementById('btn_' + sectionId);
+  if (spinner) spinner.style.display = 'flex';
+  if (btn) btn.classList.add('loading');
+
+  try {
+    const submittalText = await extractPdfText(file);
+
+    // Only evaluate items not yet satisfied (gap-fill). First upload = all items.
+    const openItems = section.submittals.filter(i => i.status !== 'met');
+    const targetItems = openItems.length ? openItems : section.submittals;
+
+    const requirementsText = targetItems.map((item, i) =>
+      `${i + 1}. [${item.type}] ${item.requirement || item.name}`
+    ).join('\n\n');
+
+    const result = await checkSubmittalVsSpec(requirementsText, submittalText, section.title);
+
+    if (result && result.items) {
+      result.items.forEach(r => {
+        const item = targetItems.find(s =>
+          (s.requirement || s.name).toLowerCase().includes(r.name.toLowerCase().slice(0, 20)) ||
+          r.name.toLowerCase().includes((s.name).toLowerCase().slice(0, 20))
+        );
+        if (item) {
+          // Don't downgrade an already-met item from an earlier submittal
+          if (item.status === 'met' && r.status !== 'met') return;
+          item.status = r.status;
+          item.note = r.note || '';
+          if (r.status === 'met' || r.status === 'partial') {
+            item.foundIn = {
+              submittalId,
+              submittalLabel,
+              submittalName: file.name,
+              found: r.found || r.note || ''
+            };
+          }
+        }
+      });
+    }
+
+    persistCurrentJob();
+    refreshSectionView(section);
+    updateStats();
+
+    const filled = (result?.items || []).filter(r => r.status === 'met').length;
+    showToast(`${submittalLabel} checked — ${filled} requirement${filled === 1 ? '' : 's'} satisfied`, 'success');
+  } catch (err) {
+    persistCurrentJob();
+    refreshSectionView(section);
+    showToast('File attached, but check failed: ' + err.message, 'error');
+    console.error(err);
+  } finally {
+    const sp = document.getElementById('spinner_' + sectionId);
+    const b = document.getElementById('btn_' + sectionId);
+    if (sp) sp.style.display = 'none';
+    if (b) b.classList.remove('loading');
+  }
+}
+
+// ── Gemini API call ──
+async function checkSubmittalVsSpec(requirements, submittalText, sectionTitle) {
+  const prompt = `You are a construction spec compliance expert reviewing a vendor submittal against specification section requirements.
+
+SPECIFICATION SECTION: ${sectionTitle}
+
+REQUIRED SUBMITTALS (verbatim spec text, numbered):
+${requirements}
+
+VENDOR SUBMITTAL TEXT (extracted from PDF):
+${submittalText.slice(0, 14000)}
+
+For each required submittal item above, determine whether THIS vendor submittal satisfies it.
+
+Respond ONLY with valid JSON in this exact format, no other text:
+{
+  "items": [
+    {
+      "name": "first ~8 words of the requirement, enough to identify it",
+      "status": "met" | "partial" | "missing",
+      "found": "what specifically was located in the submittal that addresses this (or empty string if nothing)",
+      "note": "brief reasoning, max 25 words"
+    }
+  ]
+}
+
+Rules:
+- "met" = submittal clearly satisfies the requirement
+- "partial" = submittal addresses it but is incomplete or unclear
+- "missing" = no evidence in this submittal for this requirement
+- "found" should quote or paraphrase the specific submittal content that matches (keep under 30 words). Empty if missing.
+- Include every item from the required list in your response
+- Be factual and concise`;
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 4096 }
+    })
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `Gemini API error ${res.status}`);
+  }
+
+  const data = await res.json();
+  const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const clean = raw.replace(/```json|```/g, '').trim();
+  return JSON.parse(clean);
+}
+
+// ── Stats ──
+function updateStats() {
+  const all = [...specSections.div22, ...specSections.div23].flatMap(s => s.submittals);
+  const needed = all.filter(x => x.status === 'needed').length;
+  const met = all.filter(x => x.status === 'met').length;
+  const partial = all.filter(x => x.status === 'partial').length;
+  const missing = all.filter(x => x.status === 'missing').length;
+
+  document.getElementById('statNeeded').textContent = needed;
+  document.getElementById('statMet').textContent = met;
+  document.getElementById('statPartial').textContent = partial;
+  document.getElementById('statMissing').textContent = missing;
+
+  const bar = document.getElementById('statsBar');
+  if (all.length > 0) bar.classList.add('show');
+}
+
+// ── Tab switching ──
+function switchTab(div) {
+  document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', i === (div === 'div22' ? 0 : 1)));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + div).classList.add('active');
+}
+
+// ── Progress ──
+function setProgress(show, label, pct) {
+  const wrap = document.getElementById('progressWrap');
+  wrap.classList.toggle('show', show);
+  if (label) document.getElementById('progressLabel').textContent = label;
+  if (pct !== undefined) document.getElementById('progressFill').style.width = pct + '%';
+}
+
+// ── Toast ──
+let toastTimer;
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (type ? ' ' + type : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>
