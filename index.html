@@ -770,10 +770,10 @@
 <!-- ═══ WORKSPACE ═══ -->
 <div id="workspace" style="display:none">
 <div class="upload-zone" id="uploadZone">
-  <input type="file" id="specFileInput" accept=".pdf,application/pdf" aria-label="Upload project spec PDF">
+  <input type="file" id="specFileInput" accept=".pdf,application/pdf" multiple aria-label="Upload project spec PDFs">
   <span class="upload-icon">📋</span>
   <div class="upload-title">Upload Project Spec</div>
-  <div class="upload-hint">Drop a PDF or click to browse — Division 22 &amp; 23 will be parsed automatically</div>
+  <div class="upload-hint">Drop one combined spec PDF or multiple per-section PDFs — Division 22 &amp; 23 will be parsed automatically</div>
 </div>
 
 <div class="progress-wrap" id="progressWrap">
@@ -818,7 +818,7 @@ if (PDF_OK) {
 }
 
 // ── Version ──
-const APP_VERSION = 'v1.4.0';
+const APP_VERSION = 'v1.5.0';
 document.getElementById('versionLabel').textContent = APP_VERSION;
 
 // ── State ──
@@ -826,7 +826,7 @@ let specSections = { div22: [], div23: [] };
 let apiKey = '';
 let jobs = [];              // all saved jobs (metadata + sections; PDF bytes live in IndexedDB)
 let currentJob = null;      // the job being worked on
-let currentPdfUrl = null;   // blob URL of current job's spec PDF (for page links)
+let pdfUrlCache = {};       // fileKey -> blob URL for the current job's spec PDFs
 let detailSectionId = null; // id of section open on the detail page
 let activeTab = 'div22';
 let processingSpec = false;
@@ -906,6 +906,7 @@ function saveJobs() {
     created: j.created,
     hasPdf: !!j.hasPdf,
     pageCount: j.pageCount || 0,
+    specFiles: j.specFiles || [],
     sections: j.sections || { div22: [], div23: [] }
   }));
   try {
@@ -953,7 +954,7 @@ function showJobsHome() {
   document.getElementById('currentJobName').textContent = '';
   currentJob = null;
   detailSectionId = null;
-  if (currentPdfUrl) { URL.revokeObjectURL(currentPdfUrl); currentPdfUrl = null; }
+  clearPdfUrlCache();
   renderJobsGrid();
 }
 
@@ -1029,14 +1030,9 @@ async function openJob(id) {
     ? job.sections : { div22: [], div23: [] };
   if (!specSections.div22) specSections.div22 = [];
   if (!specSections.div23) specSections.div23 = [];
+  if (!job.specFiles) job.specFiles = [];
 
-  // Restore PDF blob URL for page links (async from IndexedDB)
-  if (currentPdfUrl) { URL.revokeObjectURL(currentPdfUrl); currentPdfUrl = null; }
-  if (job.hasPdf) {
-    pdfStore.get(job.id).then(blob => {
-      if (blob && currentJob === job) currentPdfUrl = URL.createObjectURL(blob);
-    });
-  }
+  clearPdfUrlCache(); // PDFs load lazily from IndexedDB when a page link is clicked
 
   document.getElementById('jobsHome').style.display = 'none';
   document.getElementById('sectionDetail').style.display = 'none';
@@ -1063,6 +1059,7 @@ function deleteJob(id) {
   if (!confirm(`Delete "${job.name}"? This cannot be undone.`)) return;
   jobs = jobs.filter(j => j.id !== id);
   pdfStore.del(id);
+  (job.specFiles || []).forEach(f => pdfStore.del(id + '::' + f.id));
   saveJobs();
   renderJobsGrid();
 }
@@ -1097,9 +1094,21 @@ function dataUrlToBlob(dataUrl) {
 }
 
 // ── Open spec PDF at a specific page ──
-function openSpecAtPage(page) {
-  if (!currentPdfUrl) { showToast('Spec PDF not available for this job (re-upload the spec to restore page links)', 'error'); return; }
-  window.open(currentPdfUrl + '#page=' + page, '_blank');
+function clearPdfUrlCache() {
+  Object.values(pdfUrlCache).forEach(u => URL.revokeObjectURL(u));
+  pdfUrlCache = {};
+}
+
+// fileId '' = legacy single-PDF jobs (stored under the bare job id)
+async function openSpecAtPage(page, fileId) {
+  if (!currentJob) return;
+  const key = fileId ? currentJob.id + '::' + fileId : currentJob.id;
+  if (!pdfUrlCache[key]) {
+    const blob = await pdfStore.get(key);
+    if (!blob) { showToast('Spec PDF not available for this section (re-upload the spec to restore page links)', 'error'); return; }
+    pdfUrlCache[key] = URL.createObjectURL(blob);
+  }
+  window.open(pdfUrlCache[key] + '#page=' + page, '_blank');
 }
 
 // Init
@@ -1113,14 +1122,14 @@ uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag
 uploadZone.addEventListener('drop', e => {
   e.preventDefault();
   uploadZone.classList.remove('drag');
-  const file = e.dataTransfer.files[0];
-  if (file && (file.type === 'application/pdf' || /\.pdf$/i.test(file.name))) processSpec(file);
-  else showToast('Please drop a PDF file', 'error');
+  const files = [...e.dataTransfer.files].filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+  if (files.length) processSpecFiles(files);
+  else showToast('Please drop PDF files', 'error');
 });
 
 document.getElementById('specFileInput').addEventListener('change', e => {
-  if (e.target.files[0]) processSpec(e.target.files[0]);
-  e.target.value = ''; // allow re-selecting the same file
+  if (e.target.files.length) processSpecFiles([...e.target.files]);
+  e.target.value = ''; // allow re-selecting the same files
 });
 
 // ── Extract text from PDF ──
@@ -1167,7 +1176,9 @@ function parseSections(text, pageOffsets) {
   // newlines, so we cut at structural keywords instead).
   const rawMatches = [];
   let m;
-  const re2 = /SECTION\s+(2[23]\s*\d{2}\s*\d{2}(?:\.\d+)?)\s*[-–]\s*([A-Z].{3,120})/gi;
+  // Dash after the number is optional — real specs use both "SECTION 23 05 48 -
+  // TITLE" and "SECTION 23 05 48 TITLE".
+  const re2 = /SECTION\s+(2[23]\s*\d{2}\s*\d{2}(?:\.\d+)?)\s*[-–]?\s*([A-Z].{3,120})/gi;
   while ((m = re2.exec(text)) !== null) {
     rawMatches.push({ index: m.index, number: m[1].replace(/\s+/g, ' ').trim(), rawTitle: m[2], end: m.index + m[0].length });
   }
@@ -1233,32 +1244,44 @@ function cleanTitle(raw) {
 }
 
 // ── Extract submittal line items from section text ──
+// Scans numbered article headings ("1.04 ACTION SUBMITTALS", "1.03 SUBMITTALS")
+// and captures each block up to the next numbered ALL-CAPS article heading.
+// Case-sensitive terminator so inline mentions like "Quality Assurance" inside
+// an item's text don't truncate the block (a real bug seen on real specs).
 function extractSubmittals(text) {
   const submittals = [];
-
-  const actionMatch = text.match(/ACTION\s+SUBMITTALS?([\s\S]{0,4500}?)(?=INFORMATIONAL\s+SUBMITTALS?|CLOSEOUT\s+SUBMITTALS?|QUALITY\s+ASSURANCE|PART\s+2|$)/i);
-  if (actionMatch) {
-    parseSubmittalBlock(actionMatch[1], 'Action Submittal', submittals);
+  const headingRe = /\d\.\d{1,2}\s+((?:ACTION|INFORMATIONAL|CLOSEOUT)\s+SUBMITTALS?|SUBMITTALS?)(?=\s)/gi;
+  let m;
+  while ((m = headingRe.exec(text)) !== null) {
+    const kind = m[1].toUpperCase();
+    const type = kind.startsWith('ACTION') ? 'Action Submittal'
+      : kind.startsWith('INFORMATIONAL') ? 'Informational Submittal'
+      : kind.startsWith('CLOSEOUT') ? 'Closeout Submittal'
+      : 'Submittal';
+    const rest = text.slice(m.index + m[0].length, m.index + m[0].length + 9000);
+    const endM = rest.match(/\d\.\d{1,2}\s+[A-Z][A-Z]|PART\s+[23]\b/);
+    const block = endM ? rest.slice(0, endM.index) : rest;
+    parseSubmittalBlock(block, type, submittals);
   }
 
-  const infoMatch = text.match(/INFORMATIONAL\s+SUBMITTALS?([\s\S]{0,4500}?)(?=CLOSEOUT\s+SUBMITTALS?|MAINTENANCE\s+MATERIAL|QUALITY\s+ASSURANCE|PART\s+2|$)/i);
-  if (infoMatch) {
-    parseSubmittalBlock(infoMatch[1], 'Informational Submittal', submittals);
+  // Deduplicate by first 30 chars of name within the same type
+  const unique = [];
+  for (const item of submittals) {
+    if (!unique.find(u => u.type === item.type &&
+        u.name.slice(0, 30).toLowerCase() === item.name.slice(0, 30).toLowerCase())) {
+      unique.push(item);
+    }
   }
-
-  const closeoutMatch = text.match(/CLOSEOUT\s+SUBMITTALS?([\s\S]{0,3000}?)(?=MAINTENANCE\s+MATERIAL|QUALITY\s+ASSURANCE|PART\s+2|$)/i);
-  if (closeoutMatch) {
-    parseSubmittalBlock(closeoutMatch[1], 'Closeout Submittal', submittals);
-  }
-
-  return submittals;
+  return unique;
 }
 
 function parseSubmittalBlock(text, type, out) {
   // PDF.js joins everything with spaces (no real newlines). Split on the
   // lettered article markers (" A. ", " B. ") but KEEP the full text after each
   // marker up to the next marker — that's the verbatim requirement.
-  const cleaned = text.replace(/\s+/g, ' ').trim();
+  let cleaned = text.replace(/\s+/g, ' ').trim();
+  // Strip page-footer noise like "23 05 93 - 2" anywhere in the block
+  cleaned = cleaned.replace(/\b\d{2}\s?\d{2}\s?\d{2}(?:\.\d+)?\s*-\s*\d+\b/g, ' ');
   const broken = cleaned.replace(/(^|\s)([A-Z])\.\s+(?=[A-Z])/g, '\n$2. ');
   const lines = broken.split('\n').map(l => l.trim()).filter(Boolean);
 
@@ -1267,9 +1290,7 @@ function parseSubmittalBlock(text, type, out) {
     if (!letterMatch) continue;
 
     // Full verbatim requirement text (lead line + any sub-bullets that followed)
-    let requirement = letterMatch[2].replace(/\s+/g, ' ').trim();
-    // Strip page-footer noise like "22 0529 - 3"
-    requirement = requirement.replace(/\s*\d{2}\s?\d{2}\s?\d{2}(?:\.\d+)?\s*-\s*\d+\s*$/,'').trim();
+    const requirement = letterMatch[2].replace(/\s+/g, ' ').trim();
 
     // Short display name = text up to the first sentence break / colon / sub-item
     let name = requirement;
@@ -1277,7 +1298,7 @@ function parseSubmittalBlock(text, type, out) {
     if (cut > 3) name = name.slice(0, cut).trim();
     name = name.replace(/[:.]?\s*$/, '').trim();
 
-    if (requirement.length > 3 && requirement.length < 1200 && name.length > 2) {
+    if (requirement.length > 3 && requirement.length < 1500 && name.length > 2) {
       out.push({
         id: Math.random().toString(36).slice(2),
         name: name.slice(0, 140),
@@ -1289,78 +1310,116 @@ function parseSubmittalBlock(text, type, out) {
       });
     }
   }
-
-  // Deduplicate by first 30 chars of name
-  const unique = [];
-  for (const item of out) {
-    if (!unique.find(u => u.name.slice(0, 30).toLowerCase() === item.name.slice(0, 30).toLowerCase())) {
-      unique.push(item);
-    }
-  }
-  out.length = 0;
-  out.push(...unique);
 }
 
-// ── Main spec processing ──
-async function processSpec(file) {
+// ── Main spec processing (one combined PDF or many per-section PDFs) ──
+// Infer "23 05 48" from a filename like "23-05-48-Vibration-..._Rev_0.pdf"
+function sectionNumberFromFilename(name) {
+  const m = name.match(/(2[23])[\s._-]*(\d{2})[\s._-]*(\d{2})(\.\d+)?/);
+  return m ? `${m[1]} ${m[2]} ${m[3]}${m[4] || ''}` : null;
+}
+
+function titleFromFilename(name, num) {
+  let t = name.replace(/\.pdf$/i, '').replace(/_?Rev[\s._-]*\d+$/i, '');
+  if (num) t = t.replace(/^[\d\s._-]+/, '');
+  return cleanTitle(t.replace(/[-_]+/g, ' ').trim()) || 'Untitled Section';
+}
+
+async function processSpecFiles(files) {
   if (!currentJob) { showToast('Open or create a job first', 'error'); return; }
   if (processingSpec) return;
   if (!PDF_OK) { showToast('PDF library failed to load — check your connection and reload the page', 'error'); return; }
 
-  const hadSections = specSections.div22.length + specSections.div23.length > 0;
-  if (hadSections && !confirm('This job already has a spec loaded. Replace it? Your checklist and check results will be rebuilt from the new spec.')) return;
-
   processingSpec = true;
   uploadZone.classList.add('busy');
-  setProgress(true, 'Reading PDF…', 5);
-  const prevSections = specSections;
-  specSections = { div22: [], div23: [] };
+  const skipped = [];
+  let added = 0, replaced = 0;
 
   try {
-    const { text, pageOffsets, numPages } =
-      await extractPdfText(file, p => setProgress(true, `Extracting text… ${Math.round(p * 100)}%`, p * 80));
-    setProgress(true, 'Parsing Division 22 & 23 sections…', 85);
+    for (let fi = 0; fi < files.length; fi++) {
+      const file = files[fi];
+      const fileLabel = files.length > 1 ? `(${fi + 1}/${files.length}) ${file.name}` : file.name;
+      setProgress(true, `Reading ${fileLabel}…`, (fi / files.length) * 100);
 
-    const all = parseSections(text, pageOffsets);
-    all.forEach(s => specSections[s.div].push(s));
+      let parsed;
+      try {
+        const { text, pageOffsets, numPages } = await extractPdfText(file,
+          p => setProgress(true, `Extracting ${fileLabel}… ${Math.round(p * 100)}%`, ((fi + p * 0.8) / files.length) * 100));
+        let secs = parseSections(text, pageOffsets);
 
-    if (all.length === 0) {
-      specSections = prevSections;
-      setProgress(false);
-      showToast('No Division 22/23 submittal sections found in this PDF — is this the right spec?', 'error');
-      return;
+        // Fallback: per-section PDF with no parseable header — infer from filename
+        if (secs.length === 0) {
+          const num = sectionNumberFromFilename(file.name);
+          const submittals = num ? extractSubmittals(text) : [];
+          if (num && submittals.length) {
+            secs = [{
+              id: 'sec_' + num.replace(/\s/g, ''),
+              number: num,
+              title: titleFromFilename(file.name, num),
+              div: num.startsWith('22') ? 'div22' : 'div23',
+              submittals,
+              uploadedFile: null,
+              open: false,
+              approxPage: 1
+            }];
+          }
+        }
+        parsed = { secs, numPages };
+      } catch (err) {
+        skipped.push(`${file.name} (${err.message})`);
+        continue;
+      }
+
+      if (parsed.secs.length === 0) {
+        skipped.push(`${file.name} (no Division 22/23 submittal requirements found)`);
+        continue;
+      }
+
+      // Store this PDF under its own key so each section links to its source file
+      const fid = 'f_' + Date.now() + '_' + fi;
+      let stored = false;
+      try {
+        await pdfStore.put(currentJob.id + '::' + fid, file);
+        stored = true;
+      } catch { /* page links won't survive reload for this file */ }
+      if (stored) {
+        if (!currentJob.specFiles) currentJob.specFiles = [];
+        currentJob.specFiles.push({ id: fid, name: file.name, pageCount: parsed.numPages });
+      }
+
+      // Merge: a re-uploaded section replaces the old one (fresh checklist);
+      // everything else is appended.
+      for (const s of parsed.secs) {
+        if (stored) s.fileId = fid;
+        const arr = specSections[s.div];
+        const idx = arr.findIndex(x => x.id === s.id);
+        if (idx >= 0) { arr[idx] = s; replaced++; } else { arr.push(s); added++; }
+      }
     }
 
-    setProgress(true, 'Saving spec to job…', 92);
-    currentJob.pageCount = numPages;
-    currentJob.sections = specSections;
-    try {
-      await pdfStore.put(currentJob.id, file);
-      currentJob.hasPdf = true;
-    } catch {
-      currentJob.hasPdf = false;
-      showToast('Spec parsed, but the PDF could not be stored — page links won\'t survive a reload', 'error');
-    }
-    if (currentPdfUrl) URL.revokeObjectURL(currentPdfUrl);
-    currentPdfUrl = URL.createObjectURL(file);
+    specSections.div22.sort((a, b) => a.number.localeCompare(b.number));
+    specSections.div23.sort((a, b) => a.number.localeCompare(b.number));
     persistCurrentJob();
-
-    setProgress(true, 'Building checklist…', 97);
-    await sleep(150);
     setProgress(false);
 
-    activeTab = specSections.div22.length ? 'div22' : 'div23';
-    renderAll();
-    switchTab(activeTab);
-    showToast(`Loaded ${all.length} sections (${specSections.div22.length} Plumbing, ${specSections.div23.length} HVAC)`, 'success');
-  } catch (err) {
-    specSections = prevSections;
-    setProgress(false);
-    showToast('Error reading PDF: ' + err.message, 'error');
-    console.error(err);
+    if (added + replaced > 0) {
+      activeTab = specSections.div22.length ? (activeTab === 'div23' && specSections.div23.length ? 'div23' : 'div22') : 'div23';
+      renderAll();
+      switchTab(activeTab);
+      const bits = [];
+      if (added) bits.push(`${added} section${added === 1 ? '' : 's'} added`);
+      if (replaced) bits.push(`${replaced} updated`);
+      showToast(bits.join(', ') + ` — ${specSections.div22.length} Plumbing, ${specSections.div23.length} HVAC total`, 'success');
+    }
+    if (skipped.length) {
+      console.warn('Skipped spec files:', skipped);
+      showToast(`Skipped ${skipped.length} file${skipped.length === 1 ? '' : 's'}: ${skipped.map(s => s.split(' (')[0]).join(', ')}`,
+        added + replaced > 0 ? '' : 'error');
+    }
   } finally {
     processingSpec = false;
     uploadZone.classList.remove('busy');
+    setProgress(false);
   }
 }
 
@@ -1408,7 +1467,7 @@ function renderSectionCard(s) {
   }
 
   const pageRefHtml = s.approxPage
-    ? `<a class="page-ref" onclick="event.stopPropagation(); openSpecAtPage(${s.approxPage})" title="Open spec PDF at this section">PDF p.${s.approxPage} ↗</a>`
+    ? `<a class="page-ref" onclick="event.stopPropagation(); openSpecAtPage(${s.approxPage}, '${escapeHtml(s.fileId || '')}')" title="Open spec PDF at this section">PDF p.${s.approxPage} ↗</a>`
     : '';
 
   return `<div class="section-card navigable" id="${escapeHtml(s.id)}" onclick="openSection('${escapeHtml(s.id)}')">
@@ -1464,7 +1523,7 @@ function renderSectionDetail(s) {
   const hasUploads = files.length > 0;
 
   const pageRefHtml = s.approxPage
-    ? `<a class="page-ref" onclick="openSpecAtPage(${s.approxPage})" title="Open spec PDF at this section">PDF p.${s.approxPage} ↗</a>`
+    ? `<a class="page-ref" onclick="openSpecAtPage(${s.approxPage}, '${escapeHtml(s.fileId || '')}')" title="Open spec PDF at this section">PDF p.${s.approxPage} ↗</a>`
     : '';
 
   const summaryChips = `
@@ -1621,7 +1680,20 @@ async function handleSubmittalUpload(sectionId, input) {
   if (btn) btn.classList.add('loading');
 
   try {
-    const { text: submittalText } = await extractPdfText(file);
+    // Extract text; scanned submittals (no text layer) get sent to Gemini as
+    // the raw PDF instead, which it can read natively.
+    let submittalText = '';
+    try {
+      submittalText = (await extractPdfText(file)).text;
+    } catch { /* no text layer — fall through to PDF upload */ }
+    let pdfPart = null;
+    if (submittalText.trim().length < 500) {
+      if (file.size > 18 * 1024 * 1024) {
+        throw new Error('This submittal appears to be scanned (no text layer) and is too large to check directly — try an OCR\'d copy');
+      }
+      pdfPart = await fileToBase64(file);
+      showToast('Scanned PDF detected — sending the document itself to Gemini for reading', '');
+    }
 
     // Only evaluate items not yet satisfied (gap-fill). First upload = all items.
     const openItems = section.submittals.filter(i => i.status !== 'met');
@@ -1631,7 +1703,7 @@ async function handleSubmittalUpload(sectionId, input) {
       `${i + 1}. [${item.type}] ${item.requirement || item.name}`
     ).join('\n\n');
 
-    const result = await checkSubmittalVsSpec(requirementsText, submittalText, section.title);
+    const result = await checkSubmittalVsSpec(requirementsText, submittalText, section.title, pdfPart);
 
     if (result && Array.isArray(result.items)) {
       result.items.forEach(r => {
@@ -1677,8 +1749,18 @@ async function handleSubmittalUpload(sectionId, input) {
   }
 }
 
+function fileToBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
 // ── Gemini API call (with timeout + one retry + robust JSON extraction) ──
-async function checkSubmittalVsSpec(requirements, submittalText, sectionTitle) {
+// pdfBase64: when set, the submittal is attached as a PDF (for scanned docs).
+async function checkSubmittalVsSpec(requirements, submittalText, sectionTitle, pdfBase64) {
   const prompt = `You are a construction spec compliance expert reviewing a vendor submittal against specification section requirements.
 
 SPECIFICATION SECTION: ${sectionTitle}
@@ -1686,8 +1768,8 @@ SPECIFICATION SECTION: ${sectionTitle}
 REQUIRED SUBMITTALS (verbatim spec text, numbered):
 ${requirements}
 
-VENDOR SUBMITTAL TEXT (extracted from PDF):
-${submittalText.slice(0, 14000)}
+${pdfBase64 ? 'The vendor submittal is attached as a PDF document.' : `VENDOR SUBMITTAL TEXT (extracted from PDF):
+${submittalText.slice(0, 60000)}`}
 
 For each required submittal item above, determine whether THIS vendor submittal satisfies it.
 
@@ -1721,7 +1803,9 @@ Rules:
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
+          contents: [{ parts: pdfBase64
+            ? [{ text: prompt }, { inline_data: { mime_type: 'application/pdf', data: pdfBase64 } }]
+            : [{ text: prompt }] }],
           generationConfig: { temperature: 0.1, maxOutputTokens: 4096, responseMimeType: 'application/json' }
         }),
         signal: ctrl.signal
