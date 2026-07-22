@@ -149,6 +149,27 @@
   .pkg-status-badge.approved, .pkg-status-badge.approved_as_noted { background: var(--green-muted); color: var(--green); }
   .pkg-status-badge.revise_resubmit { background: var(--red-muted); color: var(--red); }
   .sub-clip { font-size: 10px; color: var(--gold); font-family: var(--mono); flex-shrink: 0; }
+
+  /* ── Needs-matching panel ── */
+  .unmatched-panel {
+    margin: 14px 24px 0; border: 1px solid var(--gold-dim); border-radius: 8px;
+    background: var(--surface); overflow: hidden;
+  }
+  .unm-title {
+    padding: 10px 14px; font-size: 11px; font-family: var(--mono); text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--gold); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .unm-row {
+    display: flex; gap: 8px; align-items: center; padding: 8px 14px;
+    border-bottom: 1px solid var(--border); flex-wrap: wrap;
+  }
+  .unm-row:last-child { border-bottom: none; }
+  .unm-name { flex: 1; min-width: 160px; font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .unm-row select {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text); font-size: 12px; padding: 5px 8px; max-width: 260px;
+  }
   .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
   .upload-icon { font-size: 26px; margin-bottom: 8px; display: block; }
   .upload-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
@@ -469,7 +490,7 @@
     <div class="logo-mark">SC</div>
     <div>
       <span class="logo-text">SpecCheck</span>
-      <span class="logo-sub">Submittal Compliance · <span id="versionLabel">v2.3</span></span>
+      <span class="logo-sub">Submittal Compliance · <span id="versionLabel">v2.4</span></span>
     </div>
   </div>
   <div class="header-right">
@@ -523,6 +544,8 @@
   <button class="zone-folder-btn" type="button" onclick="event.stopPropagation(); document.getElementById('submittalFolderInput').click()">📁 Choose a folder…</button>
   <input type="file" id="submittalFolderInput" webkitdirectory directory multiple style="display:none">
 </div>
+
+<div class="unmatched-panel" id="unmatchedPanel" style="display:none"></div>
 
 <div class="submittals-list-panel" id="submittalsList" style="display:none"></div>
 
@@ -649,7 +672,7 @@ async function expandToPdfs(fileList) {
   return pdfs;
 }
 
-const APP_VERSION = 'v2.3.0';
+const APP_VERSION = 'v2.4.0';
 document.getElementById('versionLabel').textContent = APP_VERSION;
 
 // ── Status vocab ──
@@ -682,6 +705,7 @@ let activeTab = 'div22';
 let processingSpec = false;
 let listFilter = 'all';
 let listSort = 'number';
+let pendingUnmatched = [];  // submittals awaiting a manual section match: {id, file, name}
 
 // ── IndexedDB for PDF storage ──
 const pdfStore = {
@@ -930,6 +954,7 @@ function showJobsHome() {
   document.getElementById('currentJobName').textContent = '';
   currentJob = null;
   detailSectionId = null;
+  pendingUnmatched = [];
   clearPdfUrlCache();
   renderJobsGrid();
 }
@@ -997,6 +1022,7 @@ function openJob(id) {
   migrateJob(job);
   currentJob = job;
   specSections = job.sections;
+  pendingUnmatched = [];
   clearPdfUrlCache();
 
   document.getElementById('jobsHome').style.display = 'none';
@@ -1016,6 +1042,7 @@ function openJob(id) {
     document.getElementById('wsToolbar').style.display = 'none';
     document.getElementById('submittalZone').style.display = 'none';
     document.getElementById('submittalsList').style.display = 'none';
+    document.getElementById('unmatchedPanel').style.display = 'none';
     document.getElementById('statsBar').classList.remove('show');
     resetPanels();
   }
@@ -1117,6 +1144,22 @@ document.getElementById('submittalFolderInput').addEventListener('change', e => 
 // a new package is created and (if a key is set) checked against the spec.
 function normNum(str) { const m = String(str).match(/(2[23])[\s._-]*(\d{2})[\s._-]*(\d{2})(?:\.(\d+))?/); return m ? m[1] + m[2] + m[3] + (m[4] || '') : null; }
 
+// Create a submittal package for one file on a section (store PDF + Rev 0).
+async function createPackageFromFile(section, f, note) {
+  const uid = Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  const pkg = {
+    id: 'pkg_' + uid, number: nextPackageNumber(section),
+    status: 'preparing', sectionIds: [section.id],
+    submittedDate: null, returnedDate: null, note: note || ('Imported: ' + f.name), revisions: []
+  };
+  const fileId = 'r_' + uid;
+  let stored = false;
+  try { await pdfStore.put(currentJob.id + '::pkg::' + fileId, f); stored = true; } catch {}
+  pkg.revisions.push({ rev: 0, fileId: stored ? fileId : null, fileName: f.name, uploadedAt: Date.now() });
+  currentJob.packages.push(pkg);
+  return pkg;
+}
+
 async function importSubmittals(fileList) {
   if (!currentJob) { showToast('Open a job first', 'error'); return; }
   if (!allSections().length) { showToast('Load the project spec before importing submittals', 'error'); return; }
@@ -1132,54 +1175,92 @@ async function importSubmittals(fileList) {
 
   if (!pdfs.length) { setProgress(false); processingSpec = false; submittalZone.classList.remove('busy'); showToast('No PDFs found in that drop', 'error'); return; }
 
-  // Index sections by normalized CSI number
   const byNum = {};
   allSections().forEach(s => { const n = normNum(s.number); if (n) byNum[n] = s; });
 
-  const matched = [];   // {file, section}
-  const unmatched = [];
+  const matched = [];        // {file, section}
+  const unmatchedFiles = []; // File objects that need manual matching
   for (const f of pdfs) {
     const n = normNum(pathOf(f));
     const sec = n ? byNum[n] : null;
     if (sec) matched.push({ file: f, section: sec });
-    else unmatched.push(pathOf(f).split('/').pop());
-  }
-
-  if (!matched.length) {
-    setProgress(false); processingSpec = false; submittalZone.classList.remove('busy');
-    showToast(`No submittals matched a section (${pdfs.length} PDF${pdfs.length === 1 ? '' : 's'}). Filenames need the section number, e.g. "23 07 19".`, 'error');
-    return;
+    else unmatchedFiles.push(f);
   }
 
   let created = 0, checked = 0;
   for (let i = 0; i < matched.length; i++) {
     const { file: f, section } = matched[i];
     setProgress(true, `Importing ${section.number} (${i + 1}/${matched.length})…`, ((i + 1) / matched.length) * 100);
-    const pkg = {
-      id: 'pkg_' + Date.now() + '_' + i, number: nextPackageNumber(section),
-      status: 'preparing', sectionIds: [section.id],
-      submittedDate: null, returnedDate: null, note: 'Imported: ' + f.name, revisions: []
-    };
-    const fileId = 'r_' + Date.now() + '_' + i;
-    let stored = false;
-    try { await pdfStore.put(currentJob.id + '::pkg::' + fileId, f); stored = true; } catch {}
-    pkg.revisions.push({ rev: 0, fileId: stored ? fileId : null, fileName: f.name, uploadedAt: Date.now() });
-    currentJob.packages.push(pkg);
+    const pkg = await createPackageFromFile(section, f);
     created++;
-    if (apiKey) {
-      try { await runPackageCheck(pkg, f); checked++; } catch (err) { console.warn('check failed for', f.name, err); }
-    }
+    if (apiKey) { try { await runPackageCheck(pkg, f); checked++; } catch (err) { console.warn('check failed for', f.name, err); } }
   }
+
+  // Hold anything that didn't auto-match so the user can match it by hand
+  for (const f of unmatchedFiles) {
+    pendingUnmatched.push({ id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), file: f, name: pathOf(f).split('/').pop() });
+  }
+
   persistCurrentJob();
   setProgress(false);
   processingSpec = false;
   submittalZone.classList.remove('busy');
   renderAll();
   refreshDetail();
-  let msg = `Imported ${created} submittal${created === 1 ? '' : 's'}` + (apiKey ? `, checked ${checked}` : ' (add a Gemini key to auto-check)');
-  if (unmatched.length) msg += ` · ${unmatched.length} unmatched skipped`;
-  showToast(msg, 'success');
-  if (unmatched.length) console.warn('Unmatched submittals:', unmatched);
+
+  let msg;
+  if (created) {
+    msg = `Imported ${created} submittal${created === 1 ? '' : 's'}` + (apiKey ? `, checked ${checked}` : ' (add a Gemini key to auto-check)');
+    if (unmatchedFiles.length) msg += ` · ${unmatchedFiles.length} need matching below`;
+  } else {
+    msg = `${unmatchedFiles.length} submittal${unmatchedFiles.length === 1 ? '' : 's'} couldn't be matched automatically — pick a section for each below`;
+  }
+  showToast(msg, created ? 'success' : '');
+}
+
+// ── Manual matching of unmatched submittals ──
+async function assignUnmatched(id) {
+  const u = pendingUnmatched.find(x => x.id === id);
+  if (!u) return;
+  const sel = document.getElementById('unmsel_' + id);
+  const sectionId = sel && sel.value;
+  if (!sectionId) { showToast('Pick a section first', ''); return; }
+  const section = findSection(sectionId);
+  if (!section) return;
+  const pkg = await createPackageFromFile(section, u.file, 'Manually matched: ' + u.name);
+  pendingUnmatched = pendingUnmatched.filter(x => x.id !== id);
+  persistCurrentJob();
+  renderAll();
+  if (apiKey) { try { await runPackageCheck(pkg, u.file); } catch (e) { console.warn(e); } }
+  renderUnmatched();
+  refreshDetail();
+  showToast(`Matched "${u.name}" to ${section.number}`, 'success');
+}
+function dismissUnmatched(id) {
+  pendingUnmatched = pendingUnmatched.filter(x => x.id !== id);
+  renderUnmatched();
+}
+function dismissAllUnmatched() {
+  if (pendingUnmatched.length && !confirm(`Discard ${pendingUnmatched.length} unmatched submittal${pendingUnmatched.length === 1 ? '' : 's'}?`)) return;
+  pendingUnmatched = [];
+  renderUnmatched();
+}
+function renderUnmatched() {
+  const el = document.getElementById('unmatchedPanel');
+  if (!el) return;
+  if (!pendingUnmatched.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  const secOpts = allSections()
+    .slice().sort((a, b) => a.number.localeCompare(b.number))
+    .map(s => `<option value="${s.id}">${escapeHtml(s.number)} — ${escapeHtml(s.title)}</option>`).join('');
+  const rows = pendingUnmatched.map(u => `<div class="unm-row">
+      <span class="unm-name" title="${escapeHtml(u.name)}">📄 ${escapeHtml(u.name)}</span>
+      <select id="unmsel_${u.id}" aria-label="Section for ${escapeHtml(u.name)}"><option value="">Assign to section…</option>${secOpts}</select>
+      <button class="btn" onclick="assignUnmatched('${u.id}')">Match</button>
+      <button class="btn subtle" onclick="dismissUnmatched('${u.id}')">Skip</button>
+    </div>`).join('');
+  el.innerHTML = `<div class="unm-title">⚠ Needs matching — pick a section for each <span class="slp-count">${pendingUnmatched.length}</span>
+      <button class="btn subtle" style="margin-left:auto" onclick="dismissAllUnmatched()">Dismiss all</button></div>${rows}`;
 }
 
 // ── PDF text extraction ──
@@ -1412,6 +1493,7 @@ function renderAll() {
   document.getElementById('count23').textContent = specSections.div23.length;
   renderPanel('div22');
   renderPanel('div23');
+  renderUnmatched();
   renderSubmittalsList();
   updateStats();
 }
