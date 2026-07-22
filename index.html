@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SpecCheck — Submittal Compliance</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root {
     --black: #0a0a0a;
@@ -429,7 +430,7 @@
     <div class="logo-mark">SC</div>
     <div>
       <span class="logo-text">SpecCheck</span>
-      <span class="logo-sub">Submittal Compliance · <span id="versionLabel">v2.0</span></span>
+      <span class="logo-sub">Submittal Compliance · <span id="versionLabel">v2.1</span></span>
     </div>
   </div>
   <div class="header-right">
@@ -462,10 +463,10 @@
 <!-- ═══ WORKSPACE ═══ -->
 <div id="workspace" style="display:none">
 <div class="upload-zone" id="uploadZone">
-  <input type="file" id="specFileInput" accept=".pdf,application/pdf" multiple aria-label="Upload project spec PDFs">
+  <input type="file" id="specFileInput" accept=".pdf,application/pdf,.zip,application/zip" multiple aria-label="Upload project spec PDFs or a zip">
   <span class="upload-icon">📋</span>
   <div class="upload-title">Upload Project Spec</div>
-  <div class="upload-hint">Drop one combined spec PDF or multiple per-section PDFs — Division 22 &amp; 23 will be parsed automatically</div>
+  <div class="upload-hint">Drop a combined spec PDF, multiple per-section PDFs, or a .zip of them — Division 22 &amp; 23 parse automatically</div>
 </div>
 
 <div class="progress-wrap" id="progressWrap">
@@ -474,6 +475,8 @@
 </div>
 
 <div class="ws-toolbar" id="wsToolbar" style="display:none">
+  <button class="btn" onclick="document.getElementById('submittalZipInput').click()" title="Import a .zip of vendor submittals — matched to sections automatically">📥 Import submittals (zip)</button>
+  <input type="file" id="submittalZipInput" accept=".zip,application/zip" style="display:none">
   <button class="btn" onclick="exportRegisterCsv()" title="Download the submittal register as CSV">⬇ Register (CSV)</button>
   <button class="btn subtle" onclick="printRegister()" title="Open a printable register (Save as PDF)">🖨 Print register</button>
   <span class="spacer"></span>
@@ -530,8 +533,44 @@ const PDF_OK = typeof pdfjsLib !== 'undefined';
 if (PDF_OK) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
+const ZIP_OK = typeof JSZip !== 'undefined';
 
-const APP_VERSION = 'v2.0.0';
+// Pull every PDF out of a .zip (recursively, ignoring junk/hidden files).
+// Returns File objects whose .name is the basename but with a `_zipPath`
+// property carrying the full in-zip path (used to match sections by number).
+async function extractPdfsFromZip(file) {
+  if (!ZIP_OK) throw new Error('Zip support failed to load — check your connection and reload the page');
+  const zip = await JSZip.loadAsync(file);
+  const out = [];
+  const entries = Object.values(zip.files).filter(e =>
+    !e.dir && /\.pdf$/i.test(e.name) && !e.name.split('/').pop().startsWith('.') && !e.name.includes('__MACOSX'));
+  for (const e of entries) {
+    const blob = await e.async('blob');
+    const base = e.name.split('/').pop();
+    const f = new File([blob], base, { type: 'application/pdf' });
+    try { f._zipPath = e.name; } catch {}
+    out.push(f);
+  }
+  return out;
+}
+
+const isZip = f => /\.zip$/i.test(f.name) || f.type === 'application/zip' || f.type === 'application/x-zip-compressed';
+
+// Expand any zips in a dropped/selected file list into a flat list of PDFs.
+async function expandToPdfs(fileList) {
+  const pdfs = [];
+  for (const f of fileList) {
+    if (isZip(f)) {
+      try { pdfs.push(...await extractPdfsFromZip(f)); }
+      catch (err) { showToast(`Could not open ${f.name}: ${err.message}`, 'error'); }
+    } else if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
+      pdfs.push(f);
+    }
+  }
+  return pdfs;
+}
+
+const APP_VERSION = 'v2.1.0';
 document.getElementById('versionLabel').textContent = APP_VERSION;
 
 // ── Status vocab ──
@@ -950,21 +989,99 @@ showJobsHome();
 const uploadZone = document.getElementById('uploadZone');
 uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag'); });
 uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag'));
-uploadZone.addEventListener('drop', e => {
+uploadZone.addEventListener('drop', async e => {
   e.preventDefault();
   uploadZone.classList.remove('drag');
-  const files = [...e.dataTransfer.files].filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
-  if (files.length) processSpecFiles(files);
-  else showToast('Please drop PDF files', 'error');
+  const dropped = [...e.dataTransfer.files];
+  if (!dropped.length) return;
+  const pdfs = await expandToPdfs(dropped);
+  if (pdfs.length) processSpecFiles(pdfs);
+  else showToast('No PDFs found — drop PDF or .zip files', 'error');
 });
-document.getElementById('specFileInput').addEventListener('change', e => {
-  if (e.target.files.length) processSpecFiles([...e.target.files]);
+document.getElementById('specFileInput').addEventListener('change', async e => {
+  const chosen = [...e.target.files];
   e.target.value = '';
+  if (!chosen.length) return;
+  const pdfs = await expandToPdfs(chosen);
+  if (pdfs.length) processSpecFiles(pdfs);
+  else showToast('No PDFs found in selection', 'error');
 });
 document.getElementById('importJobInput').addEventListener('change', e => {
   if (e.target.files[0]) importJob(e.target.files[0]);
   e.target.value = '';
 });
+document.getElementById('submittalZipInput').addEventListener('change', e => {
+  if (e.target.files[0]) importSubmittalsZip(e.target.files[0]);
+  e.target.value = '';
+});
+
+// ── Bulk-import vendor submittals from a zip ──
+// Each PDF is matched to a section by the CSI number in its path/filename;
+// a new package is created and (if a key is set) checked against the spec.
+function normNum(str) { const m = String(str).match(/(2[23])[\s._-]*(\d{2})[\s._-]*(\d{2})(?:\.(\d+))?/); return m ? m[1] + m[2] + m[3] + (m[4] || '') : null; }
+
+async function importSubmittalsZip(file) {
+  if (!currentJob) { showToast('Open a job first', 'error'); return; }
+  if (!allSections().length) { showToast('Load the project spec before importing submittals', 'error'); return; }
+  if (!ZIP_OK) { showToast('Zip support failed to load — reload the page', 'error'); return; }
+
+  processingSpec = true;
+  uploadZone.classList.add('busy');
+  let pdfs;
+  try {
+    setProgress(true, 'Reading zip…', 5);
+    pdfs = await extractPdfsFromZip(file);
+  } catch (err) { setProgress(false); showToast('Could not open zip: ' + err.message, 'error'); processingSpec = false; uploadZone.classList.remove('busy'); return; }
+
+  // Index sections by normalized CSI number
+  const byNum = {};
+  allSections().forEach(s => { const n = normNum(s.number); if (n) byNum[n] = s; });
+
+  const matched = [];   // {file, section}
+  const unmatched = [];
+  for (const f of pdfs) {
+    const n = normNum(f._zipPath || f.name) || normNum(f.name);
+    const sec = n ? byNum[n] : null;
+    if (sec) matched.push({ file: f, section: sec });
+    else unmatched.push(f.name);
+  }
+
+  if (!matched.length) {
+    setProgress(false); processingSpec = false; uploadZone.classList.remove('busy');
+    showToast(`No submittals matched a section (${pdfs.length} PDF${pdfs.length === 1 ? '' : 's'} in zip). Filenames need the section number, e.g. "23 07 19".`, 'error');
+    return;
+  }
+
+  let created = 0, checked = 0;
+  for (let i = 0; i < matched.length; i++) {
+    const { file: f, section } = matched[i];
+    setProgress(true, `Importing ${section.number} (${i + 1}/${matched.length})…`, ((i + 1) / matched.length) * 100);
+    const pkg = {
+      id: 'pkg_' + Date.now() + '_' + i, number: nextPackageNumber(section),
+      status: 'preparing', sectionIds: [section.id],
+      submittedDate: null, returnedDate: null, note: 'Imported from ' + file.name, revisions: []
+    };
+    const fileId = 'r_' + Date.now() + '_' + i;
+    let stored = false;
+    try { await pdfStore.put(currentJob.id + '::pkg::' + fileId, f); stored = true; } catch {}
+    pkg.revisions.push({ rev: 0, fileId: stored ? fileId : null, fileName: f.name, uploadedAt: Date.now() });
+    currentJob.packages.push(pkg);
+    created++;
+    if (apiKey) {
+      try { await runPackageCheck(pkg, f); checked++; } catch (err) { console.warn('check failed for', f.name, err); }
+    }
+  }
+  persistCurrentJob();
+  setProgress(false);
+  processingSpec = false;
+  uploadZone.classList.remove('busy');
+  renderAll();
+  refreshDetail();
+  let msg = `Imported ${created} submittal${created === 1 ? '' : 's'}` + (apiKey ? `, checked ${checked}` : ' (add a Gemini key to auto-check)');
+  if (unmatched.length) msg += ` · ${unmatched.length} unmatched skipped`;
+  showToast(msg, 'success');
+  if (unmatched.length) console.warn('Unmatched submittals:', unmatched);
+}
 
 // ── PDF text extraction ──
 async function extractPdfText(file, onProgress) {
