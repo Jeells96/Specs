@@ -1,0 +1,1940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpecCheck — Submittal Compliance</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root {
+    --black: #0a0a0a;
+    --surface: #111111;
+    --surface2: #1a1a1a;
+    --surface3: #222222;
+    --border: #2a2a2a;
+    --green: #22c55e;
+    --green-dim: #16a34a;
+    --green-muted: #14532d;
+    --gold: #f59e0b;
+    --gold-dim: #d97706;
+    --gold-muted: #451a03;
+    --red: #ef4444;
+    --red-muted: #450a0a;
+    --blue: #3b82f6;
+    --blue-muted: #172554;
+    --teal: #14b8a6;
+    --teal-muted: #134e4a;
+    --text: #e5e5e5;
+    --text-dim: #737373;
+    --text-muted: #525252;
+    --radius: 6px;
+    --mono: 'Courier New', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--black);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 52px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    flex-wrap: wrap;
+  }
+
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-mark {
+    width: 28px; height: 28px; background: var(--green); border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: 13px; color: #000; letter-spacing: -1px;
+  }
+  .logo-text { font-size: 15px; font-weight: 700; letter-spacing: 0.5px; color: var(--text); }
+  .logo-sub { font-size: 11px; color: var(--text-muted); font-weight: 400; margin-left: 2px; }
+
+  .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .api-key-wrap { display: flex; align-items: center; gap: 6px; }
+  .api-label { font-size: 11px; color: var(--text-muted); font-family: var(--mono); }
+  input.api-input {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text); font-size: 12px; font-family: var(--mono);
+    padding: 5px 10px; width: 200px; max-width: 45vw; outline: none; transition: border-color 0.15s;
+  }
+  input.api-input:focus { border-color: var(--green); }
+  .api-toggle {
+    background: none; border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text-muted); font-size: 11px; padding: 4px 8px; cursor: pointer;
+  }
+  .api-toggle:hover { color: var(--text-dim); border-color: var(--text-muted); }
+  .api-status { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+  .api-status.active { background: var(--green); }
+
+  /* ── Buttons ── */
+  .btn {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text-dim); font-size: 12px; font-weight: 600; padding: 5px 12px;
+    cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s;
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--green); color: var(--green); }
+  .btn.subtle:hover { border-color: var(--text-muted); color: var(--text); }
+  .btn.danger:hover { border-color: var(--red); color: var(--red); }
+  .back-btn { /* alias kept for existing markup */
+    background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text-dim); font-size: 12px; font-weight: 600; padding: 5px 12px; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .back-btn:hover { border-color: var(--green); color: var(--green); }
+  .current-job { font-size: 13px; font-weight: 600; color: var(--gold); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── Upload zone ── */
+  .upload-zone {
+    margin: 20px 24px 0; border: 1.5px dashed var(--border); border-radius: 10px;
+    padding: 28px 24px; text-align: center; cursor: pointer;
+    transition: border-color 0.2s, background 0.2s; background: var(--surface); position: relative;
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--green); background: #0d1a12; }
+  .upload-zone.busy { pointer-events: none; opacity: 0.6; }
+  .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .upload-icon { font-size: 26px; margin-bottom: 8px; display: block; }
+  .upload-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .upload-hint { font-size: 12px; color: var(--text-muted); }
+
+  /* ── Progress ── */
+  .progress-wrap { margin: 12px 24px 0; display: none; }
+  .progress-wrap.show { display: block; }
+  .progress-label { font-size: 11px; color: var(--text-dim); margin-bottom: 5px; font-family: var(--mono); }
+  .progress-bar { height: 3px; background: var(--surface3); border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--green); border-radius: 2px; width: 0%; transition: width 0.3s; }
+
+  /* ── Workspace toolbar ── */
+  .ws-toolbar {
+    margin: 16px 24px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  }
+  .ws-toolbar .spacer { flex: 1; }
+
+  /* ── Stats bar ── */
+  .stats-bar { margin: 14px 24px 0; display: none; gap: 12px; flex-wrap: wrap; }
+  .stats-bar.show { display: flex; }
+  .stat-pill {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 20px;
+    padding: 4px 12px; font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 5px;
+  }
+  .stat-pill .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .stat-pill.needed .dot { background: var(--text-muted); }
+  .stat-pill.met .dot { background: var(--green); }
+  .stat-pill.partial .dot { background: var(--gold); }
+  .stat-pill.missing .dot { background: var(--red); }
+  .stat-pill.na .dot { background: var(--blue); }
+
+  /* ── Tabs + filter ── */
+  .tabs-wrap { margin: 18px 24px 0; border-bottom: 1px solid var(--border); display: flex; gap: 0; }
+  .tab-btn {
+    padding: 10px 20px; background: none; border: none; border-bottom: 2px solid transparent;
+    color: var(--text-muted); font-size: 13px; font-weight: 600; cursor: pointer;
+    letter-spacing: 0.3px; transition: color 0.15s, border-color 0.15s; margin-bottom: -1px;
+  }
+  .tab-btn:hover { color: var(--text-dim); }
+  .tab-btn.active { color: var(--green); border-bottom-color: var(--green); }
+  .tab-count {
+    display: inline-block; background: var(--surface3); border-radius: 10px; padding: 1px 6px;
+    font-size: 10px; margin-left: 5px; color: var(--text-muted); font-weight: 500;
+  }
+
+  .filter-bar { margin: 12px 24px 0; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .filter-chip {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 20px;
+    padding: 4px 11px; font-size: 11px; color: var(--text-dim); cursor: pointer; transition: all 0.15s;
+  }
+  .filter-chip:hover { color: var(--text); }
+  .filter-chip.active { background: var(--green-muted); border-color: var(--green-dim); color: var(--green); }
+  .filter-bar select {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text-dim); font-size: 11px; padding: 4px 8px; cursor: pointer; margin-left: auto;
+  }
+
+  /* ── Content ── */
+  .content { padding: 16px 24px 60px; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .empty-state { text-align: center; padding: 50px 20px; color: var(--text-muted); }
+  .empty-state .empty-icon { font-size: 34px; margin-bottom: 12px; display: block; }
+  .empty-state .empty-title { font-size: 14px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; }
+  .empty-state .empty-hint { font-size: 12px; }
+
+  /* ── Section cards ── */
+  .section-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+  .section-card.oos { opacity: 0.6; }
+  .section-header {
+    padding: 12px 16px; display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; user-select: none; transition: background 0.15s; gap: 10px;
+  }
+  .section-header:hover { background: var(--surface2); }
+  .section-left { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
+  .section-number {
+    font-family: var(--mono); font-size: 11px; color: var(--green); font-weight: 700; letter-spacing: 0.5px;
+    background: var(--green-muted); padding: 2px 7px; border-radius: 4px; flex-shrink: 0;
+  }
+  .section-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .section-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .section-progress { font-size: 11px; color: var(--text-muted); font-family: var(--mono); }
+  .nav-arrow { color: var(--text-muted); font-size: 13px; flex-shrink: 0; }
+  .section-card.navigable:hover { border-color: var(--green-dim); }
+  .due-tag { font-size: 10px; font-family: var(--mono); color: var(--text-dim); }
+  .due-tag.overdue { color: var(--red); }
+  .due-tag.soon { color: var(--gold); }
+
+  /* ── Section status badge ── */
+  .sstat {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.3px; padding: 2px 8px; border-radius: 4px;
+    font-family: var(--mono); white-space: nowrap; text-transform: uppercase;
+  }
+  .sstat.not_started { background: var(--surface3); color: var(--text-muted); }
+  .sstat.in_progress { background: var(--gold-muted); color: var(--gold); }
+  .sstat.ready { background: var(--teal-muted); color: var(--teal); }
+  .sstat.submitted { background: var(--blue-muted); color: var(--blue); }
+  .sstat.approved { background: var(--green-muted); color: var(--green); }
+  .sstat.needs_resubmit { background: var(--red-muted); color: var(--red); }
+  .sstat.out_of_scope { background: var(--surface3); color: var(--text-muted); text-decoration: line-through; }
+
+  /* ── Notification toast ── */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; background: var(--surface2);
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 16px;
+    font-size: 13px; color: var(--text); z-index: 999; opacity: 0; transform: translateY(10px);
+    transition: opacity 0.2s, transform 0.2s; max-width: 340px; pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.success { border-color: var(--green-dim); }
+  .toast.error { border-color: var(--red); }
+
+  /* ── Jobs home ── */
+  .jobs-hero { padding: 34px 24px 16px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+  .jobs-title { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 6px; }
+  .jobs-subtitle { font-size: 13px; color: var(--text-dim); max-width: 520px; line-height: 1.5; }
+  .jobs-grid {
+    padding: 8px 24px 60px; display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px;
+  }
+  .job-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px;
+    cursor: pointer; transition: border-color 0.15s, transform 0.1s; position: relative;
+    min-height: 128px; display: flex; flex-direction: column;
+  }
+  .job-card:hover { border-color: var(--green); transform: translateY(-1px); }
+  .job-card.new-job { border-style: dashed; align-items: center; justify-content: center; text-align: center; color: var(--text-muted); }
+  .job-card.new-job:hover { color: var(--green); }
+  .job-card.new-job .plus { font-size: 28px; margin-bottom: 6px; }
+  .job-card.new-job .new-label { font-size: 13px; font-weight: 600; }
+  .job-name { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 6px; line-height: 1.3; padding-right: 48px; }
+  .job-meta { font-size: 11px; color: var(--text-muted); font-family: var(--mono); margin-bottom: 12px; }
+  .job-stats { margin-top: auto; display: flex; gap: 10px; font-size: 11px; color: var(--text-dim); flex-wrap: wrap; }
+  .job-stats .js { display: flex; align-items: center; gap: 4px; }
+  .job-stats .js .d { width: 6px; height: 6px; border-radius: 50%; }
+  .job-stats .js.met .d { background: var(--green); }
+  .job-stats .js.partial .d { background: var(--gold); }
+  .job-stats .js.missing .d { background: var(--red); }
+  .job-stats .js.needed .d { background: var(--text-muted); }
+  .job-action {
+    position: absolute; top: 10px; background: none; border: none; color: var(--text-muted);
+    font-size: 13px; cursor: pointer; padding: 2px 6px; border-radius: 4px;
+    opacity: 0; transition: opacity 0.15s, color 0.15s, background 0.15s;
+  }
+  .job-card:hover .job-action, .job-card:focus-within .job-action { opacity: 1; }
+  .job-delete { right: 10px; }
+  .job-delete:hover { color: var(--red); background: var(--red-muted); }
+  .job-rename { right: 36px; }
+  .job-rename:hover { color: var(--gold); background: var(--gold-muted); }
+
+  /* ── Page reference link ── */
+  .page-ref {
+    font-size: 10px; font-family: var(--mono); color: var(--gold); background: var(--gold-muted);
+    padding: 2px 7px; border-radius: 4px; cursor: pointer; text-decoration: none; transition: background 0.15s; white-space: nowrap;
+  }
+  .page-ref:hover { background: var(--gold-dim); color: #000; }
+
+  /* ── Section detail ── */
+  .detail-head { padding: 24px 24px 18px; border-bottom: 1px solid var(--border); }
+  .detail-crumb { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .detail-title-row { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .detail-number {
+    font-family: var(--mono); font-size: 13px; color: var(--green); font-weight: 700; letter-spacing: 0.5px;
+    background: var(--green-muted); padding: 4px 10px; border-radius: 5px; flex-shrink: 0;
+  }
+  .detail-title { font-size: 22px; font-weight: 800; letter-spacing: -0.4px; line-height: 1.2; flex: 1; min-width: 200px; }
+  .detail-controls { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+  .detail-controls label { font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+  .detail-controls input[type=date] {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text); font-size: 11px; padding: 4px 8px; font-family: var(--mono);
+  }
+  .switch { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .switch input { display: none; }
+  .switch .track { width: 32px; height: 18px; border-radius: 10px; background: var(--surface3); position: relative; transition: background 0.15s; }
+  .switch .track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--text-muted); transition: transform 0.15s, background 0.15s; }
+  .switch input:checked + .track { background: var(--green-muted); }
+  .switch input:checked + .track::after { transform: translateX(14px); background: var(--green); }
+
+  .detail-summary { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .summary-chip { display: flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); }
+  .summary-chip .n { font-family: var(--mono); font-weight: 700; }
+  .summary-chip.matched { background: var(--green-muted); color: var(--green); border-color: var(--green-dim); }
+  .summary-chip.partial { background: var(--gold-muted); color: var(--gold); border-color: var(--gold-dim); }
+  .summary-chip.missing { background: var(--red-muted); color: var(--red); border-color: var(--red); }
+  .summary-chip.na { background: var(--blue-muted); color: var(--blue); border-color: var(--blue); }
+  .summary-chip.needed { background: var(--surface3); color: var(--text-dim); }
+
+  .detail-body { padding: 20px 24px 60px; }
+  .detail-section-label { font-size: 11px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin: 0 0 10px; }
+
+  /* ── Packages ── */
+  .pkg-list { margin-bottom: 26px; }
+  .pkg-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+  .pkg-top { display: flex; align-items: center; gap: 10px; padding: 12px 14px; flex-wrap: wrap; }
+  .pkg-num { font-family: var(--mono); font-weight: 700; font-size: 12px; color: var(--text); }
+  .pkg-rev { font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
+  .pkg-status-select {
+    border-radius: var(--radius); font-size: 11px; font-weight: 700; padding: 4px 8px; cursor: pointer;
+    border: 1px solid var(--border); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.3px;
+  }
+  .pkg-status-select.preparing { background: var(--surface3); color: var(--text-dim); }
+  .pkg-status-select.submitted { background: var(--blue-muted); color: var(--blue); }
+  .pkg-status-select.approved { background: var(--green-muted); color: var(--green); }
+  .pkg-status-select.approved_as_noted { background: var(--green-muted); color: var(--green); }
+  .pkg-status-select.revise_resubmit { background: var(--red-muted); color: var(--red); }
+  .pkg-spacer { flex: 1; }
+  .pkg-body { padding: 0 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+  .pkg-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 11px; color: var(--text-dim); }
+  .pkg-row label { display: flex; align-items: center; gap: 5px; }
+  .pkg-row input[type=date] {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text); font-size: 11px; padding: 3px 7px; font-family: var(--mono);
+  }
+  .pkg-applies { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .applies-chip { font-size: 10px; font-family: var(--mono); background: var(--surface3); color: var(--text-dim); padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; }
+  .applies-chip .x { cursor: pointer; color: var(--text-muted); }
+  .applies-chip .x:hover { color: var(--red); }
+  .pkg-applies select { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-dim); font-size: 10px; padding: 2px 6px; cursor: pointer; }
+  .rev-list { display: flex; flex-direction: column; gap: 4px; }
+  .rev-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+  .rev-row .rev-open { color: var(--gold); cursor: pointer; }
+  .rev-row .rev-open:hover { text-decoration: underline; }
+  .pkg-note { font-size: 11px; color: var(--text-dim); font-style: italic; }
+  .pkg-note .edit { cursor: pointer; color: var(--text-muted); font-style: normal; margin-left: 6px; }
+
+  .upload-btn {
+    background: var(--surface3); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text-dim); font-size: 12px; font-weight: 600; padding: 6px 14px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: border-color 0.15s, color 0.15s, background 0.15s; position: relative; overflow: hidden;
+  }
+  .upload-btn:hover { border-color: var(--green); color: var(--green); background: #0d1a12; }
+  .upload-btn input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .upload-btn.loading { pointer-events: none; color: var(--text-muted); border-color: var(--border); }
+  .checking-spinner {
+    display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border);
+    border-top-color: var(--gold); border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--black); }
+  ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
+
+  /* ── Result groups / items ── */
+  .result-group { margin-bottom: 22px; }
+  .result-group:last-child { margin-bottom: 0; }
+  .group-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .group-icon { width: 22px; height: 22px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; flex-shrink: 0; }
+  .group-matched .group-icon { background: var(--green-muted); color: var(--green); }
+  .group-partial .group-icon { background: var(--gold-muted); color: var(--gold); }
+  .group-missing .group-icon { background: var(--red-muted); color: var(--red); }
+  .group-needed .group-icon { background: var(--surface3); color: var(--text-dim); }
+  .group-na .group-icon { background: var(--blue-muted); color: var(--blue); }
+  .group-title { font-size: 14px; font-weight: 700; }
+  .group-subtitle { font-size: 11px; color: var(--text-muted); margin-left: auto; font-family: var(--mono); }
+
+  .result-item { padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; }
+  .result-item:last-child { margin-bottom: 0; }
+  .result-type { font-size: 10px; font-family: var(--mono); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
+  .verdict-tag { font-size: 9px; padding: 1px 6px; border-radius: 3px; letter-spacing: 0.3px; }
+  .verdict-tag.ai { background: var(--surface3); color: var(--text-dim); }
+  .verdict-tag.manual { background: var(--gold-muted); color: var(--gold); }
+  .result-group.group-matched .result-item { border-left: 2px solid var(--green); }
+  .result-group.group-partial .result-item { border-left: 2px solid var(--gold); }
+  .result-group.group-missing .result-item { border-left: 2px solid var(--red); }
+  .result-group.group-needed .result-item { border-left: 2px solid var(--text-muted); }
+  .result-group.group-na .result-item { border-left: 2px solid var(--blue); }
+
+  .req-found { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-top: 8px; background: var(--border); border-radius: 6px; overflow: hidden; }
+  .rf-col { background: var(--surface2); padding: 10px 12px; }
+  .rf-label { font-size: 9px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 6px; }
+  .rf-required .rf-label { color: var(--text-dim); }
+  .rf-found .rf-label { color: var(--gold); }
+  .rf-body { font-size: 12px; line-height: 1.5; color: var(--text); }
+  .rf-required .rf-body { color: var(--text-dim); }
+  .found-source { font-size: 11px; font-weight: 600; color: var(--green); margin-bottom: 5px; font-family: var(--mono); }
+  .found-text { color: var(--text); }
+  .found-text.missing-text { color: var(--red); }
+  .found-text.muted-text { color: var(--text-muted); font-style: italic; }
+
+  .item-controls { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ov-label { font-size: 10px; color: var(--text-muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px; }
+  .ov-bar { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .ov-btn { background: var(--surface2); border: none; border-right: 1px solid var(--border); color: var(--text-dim); font-size: 11px; font-weight: 600; padding: 4px 9px; cursor: pointer; transition: background 0.12s, color 0.12s; }
+  .ov-btn:last-child { border-right: none; }
+  .ov-btn:hover { background: var(--surface3); color: var(--text); }
+  .ov-btn.active.met { background: var(--green-muted); color: var(--green); }
+  .ov-btn.active.partial { background: var(--gold-muted); color: var(--gold); }
+  .ov-btn.active.missing { background: var(--red-muted); color: var(--red); }
+  .ov-btn.active.na { background: var(--blue-muted); color: var(--blue); }
+  .ov-btn.active.ai { background: var(--surface3); color: var(--text); }
+  .item-note-btn { background: none; border: none; color: var(--text-muted); font-size: 11px; cursor: pointer; text-decoration: underline; }
+  .item-note-btn:hover { color: var(--gold); }
+  .item-note { font-size: 11px; color: var(--text-dim); margin-top: 6px; font-style: italic; }
+
+  .detail-empty { text-align: center; padding: 32px 20px; color: var(--text-muted); border: 1.5px dashed var(--border); border-radius: 10px; margin-bottom: 20px; }
+  .detail-empty .de-icon { font-size: 26px; display: block; margin-bottom: 8px; }
+  .detail-empty .de-title { font-size: 14px; font-weight: 600; color: var(--text-dim); margin-bottom: 4px; }
+  .detail-empty .de-hint { font-size: 12px; }
+
+  @media (max-width: 640px) {
+    .req-found { grid-template-columns: 1fr; }
+    header { padding: 8px 16px; }
+    .upload-zone, .progress-wrap, .stats-bar, .tabs-wrap, .filter-bar, .ws-toolbar { margin-left: 16px; margin-right: 16px; }
+    .content, .jobs-grid, .jobs-hero, .detail-head, .detail-body { padding-left: 16px; padding-right: 16px; }
+    .job-action { opacity: 1; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-mark">SC</div>
+    <div>
+      <span class="logo-text">SpecCheck</span>
+      <span class="logo-sub">Submittal Compliance · <span id="versionLabel">v2.0</span></span>
+    </div>
+  </div>
+  <div class="header-right">
+    <button class="back-btn" id="backBtn" onclick="showJobsHome()" style="display:none">← Jobs</button>
+    <span class="current-job" id="currentJobName"></span>
+    <div class="api-key-wrap">
+      <span class="api-label" title="Google Gemini API key — used only from your browser, stored locally">GEMINI KEY</span>
+      <div class="api-status" id="apiStatus" title="Key status"></div>
+      <input class="api-input" type="password" id="apiKeyInput" placeholder="AIza..." autocomplete="off" spellcheck="false" aria-label="Gemini API key">
+      <button class="api-toggle" id="apiToggle" type="button" title="Show/hide key" aria-label="Show or hide API key">👁</button>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ JOBS HOME ═══ -->
+<div id="jobsHome">
+  <div class="jobs-hero">
+    <div>
+      <h1 class="jobs-title">Your Jobs</h1>
+      <p class="jobs-subtitle">Pick a job to work on, or start a new one. Each job keeps its own spec, submittal packages, and checklist — stored locally in this browser.</p>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button class="btn subtle" onclick="document.getElementById('importJobInput').click()">⬆ Restore job</button>
+      <input type="file" id="importJobInput" accept=".json,application/json" style="display:none">
+    </div>
+  </div>
+  <div class="jobs-grid" id="jobsGrid"></div>
+</div>
+
+<!-- ═══ WORKSPACE ═══ -->
+<div id="workspace" style="display:none">
+<div class="upload-zone" id="uploadZone">
+  <input type="file" id="specFileInput" accept=".pdf,application/pdf" multiple aria-label="Upload project spec PDFs">
+  <span class="upload-icon">📋</span>
+  <div class="upload-title">Upload Project Spec</div>
+  <div class="upload-hint">Drop one combined spec PDF or multiple per-section PDFs — Division 22 &amp; 23 will be parsed automatically</div>
+</div>
+
+<div class="progress-wrap" id="progressWrap">
+  <div class="progress-label" id="progressLabel">Extracting text…</div>
+  <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+</div>
+
+<div class="ws-toolbar" id="wsToolbar" style="display:none">
+  <button class="btn" onclick="exportRegisterCsv()" title="Download the submittal register as CSV">⬇ Register (CSV)</button>
+  <button class="btn subtle" onclick="printRegister()" title="Open a printable register (Save as PDF)">🖨 Print register</button>
+  <span class="spacer"></span>
+  <button class="btn subtle" onclick="exportJob()" title="Download this whole job (checklist + PDFs) as a backup file">💾 Back up job</button>
+</div>
+
+<div class="stats-bar" id="statsBar">
+  <div class="stat-pill needed"><span class="dot"></span><span id="statNeeded">0</span> Needed</div>
+  <div class="stat-pill met"><span class="dot"></span><span id="statMet">0</span> Met</div>
+  <div class="stat-pill partial"><span class="dot"></span><span id="statPartial">0</span> Partial</div>
+  <div class="stat-pill missing"><span class="dot"></span><span id="statMissing">0</span> Missing</div>
+  <div class="stat-pill na"><span class="dot"></span><span id="statNa">0</span> N/A</div>
+</div>
+
+<div class="tabs-wrap" id="tabsWrap" style="display:none">
+  <button class="tab-btn active" id="tab-div22" onclick="switchTab('div22')">
+    Division 22 — Plumbing <span class="tab-count" id="count22">0</span>
+  </button>
+  <button class="tab-btn" id="tab-div23" onclick="switchTab('div23')">
+    Division 23 — HVAC <span class="tab-count" id="count23">0</span>
+  </button>
+</div>
+
+<div class="filter-bar" id="filterBar" style="display:none">
+  <span class="filter-chip active" data-filter="all" onclick="setFilter('all')">All</span>
+  <span class="filter-chip" data-filter="todo" onclick="setFilter('todo')">To do</span>
+  <span class="filter-chip" data-filter="ready" onclick="setFilter('ready')">Ready</span>
+  <span class="filter-chip" data-filter="submitted" onclick="setFilter('submitted')">Submitted</span>
+  <span class="filter-chip" data-filter="approved" onclick="setFilter('approved')">Approved</span>
+  <span class="filter-chip" data-filter="needs_resubmit" onclick="setFilter('needs_resubmit')">Needs resubmit</span>
+  <span class="filter-chip" data-filter="out_of_scope" onclick="setFilter('out_of_scope')">Out of scope</span>
+  <select id="sortSelect" onchange="setSort(this.value)" title="Sort sections">
+    <option value="number">Sort: Section #</option>
+    <option value="status">Sort: Status</option>
+    <option value="due">Sort: Due date</option>
+  </select>
+</div>
+
+<div class="content">
+  <div class="tab-panel active" id="panel-div22"></div>
+  <div class="tab-panel" id="panel-div23"></div>
+</div>
+</div>
+<!-- ═══ END WORKSPACE ═══ -->
+
+<!-- ═══ SECTION DETAIL ═══ -->
+<div id="sectionDetail" style="display:none"></div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+// ── PDF.js setup (guard against CDN failure) ──
+const PDF_OK = typeof pdfjsLib !== 'undefined';
+if (PDF_OK) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+const APP_VERSION = 'v2.0.0';
+document.getElementById('versionLabel').textContent = APP_VERSION;
+
+// ── Status vocab ──
+const PKG_STATUSES = {
+  preparing: 'Preparing',
+  submitted: 'Submitted',
+  approved: 'Approved',
+  approved_as_noted: 'Approved as Noted',
+  revise_resubmit: 'Revise & Resubmit'
+};
+const SECTION_STATUS_LABEL = {
+  not_started: 'Not started',
+  in_progress: 'In progress',
+  ready: 'Ready to submit',
+  submitted: 'Submitted',
+  approved: 'Approved',
+  needs_resubmit: 'Needs resubmit',
+  out_of_scope: 'Out of scope'
+};
+const SECTION_STATUS_ORDER = ['needs_resubmit','submitted','ready','in_progress','not_started','approved','out_of_scope'];
+
+// ── State ──
+let specSections = { div22: [], div23: [] };
+let apiKey = '';
+let jobs = [];
+let currentJob = null;
+let pdfUrlCache = {};
+let detailSectionId = null;
+let activeTab = 'div22';
+let processingSpec = false;
+let listFilter = 'all';
+let listSort = 'number';
+
+// ── IndexedDB for PDF storage ──
+const pdfStore = {
+  db: null,
+  async open() {
+    if (this.db) return this.db;
+    if (!window.indexedDB) return null;
+    this.db = await new Promise((res) => {
+      const r = indexedDB.open('speccheck', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('pdfs');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => res(null);
+    });
+    return this.db;
+  },
+  async put(key, blob) {
+    const db = await this.open();
+    if (!db) throw new Error('IndexedDB unavailable');
+    return new Promise((res, rej) => {
+      const tx = db.transaction('pdfs', 'readwrite');
+      tx.objectStore('pdfs').put(blob, key);
+      tx.oncomplete = res;
+      tx.onerror = () => rej(tx.error);
+    });
+  },
+  async get(key) {
+    const db = await this.open();
+    if (!db) return null;
+    return new Promise((res) => {
+      const tx = db.transaction('pdfs', 'readonly');
+      const rq = tx.objectStore('pdfs').get(key);
+      rq.onsuccess = () => res(rq.result || null);
+      rq.onerror = () => res(null);
+    });
+  },
+  async del(key) {
+    const db = await this.open();
+    if (!db) return;
+    return new Promise((res) => {
+      const tx = db.transaction('pdfs', 'readwrite');
+      tx.objectStore('pdfs').delete(key);
+      tx.oncomplete = res;
+      tx.onerror = res;
+    });
+  }
+};
+
+// ── Job persistence ──
+function loadJobs() {
+  try {
+    jobs = JSON.parse(localStorage.getItem('speccheck_jobs') || '[]');
+    if (!Array.isArray(jobs)) jobs = [];
+  } catch { jobs = []; }
+  for (const job of jobs) {
+    // Migrate legacy base64-in-localStorage PDF
+    if (job.pdfData) {
+      const data = job.pdfData; job.pdfData = null; job.hasPdf = true;
+      try { pdfStore.put(job.id, dataUrlToBlob(data)).catch(() => {}); } catch { job.hasPdf = false; }
+    }
+    migrateJob(job);
+  }
+  saveJobs();
+}
+
+// Upgrade a job in place to the current schema (safe on already-current jobs)
+function migrateJob(job) {
+  if (!job.sections) job.sections = { div22: [], div23: [] };
+  if (!job.sections.div22) job.sections.div22 = [];
+  if (!job.sections.div23) job.sections.div23 = [];
+  if (!job.specFiles) job.specFiles = [];
+  if (!Array.isArray(job.packages)) job.packages = [];
+
+  const all = [...job.sections.div22, ...job.sections.div23];
+  for (const s of all) {
+    if (s.inScope === undefined) s.inScope = true;
+    if (s.dueDate === undefined) s.dueDate = null;
+    for (const it of (s.submittals || [])) {
+      // Split legacy single "status" into AI verdict vs manual override
+      if (it.aiStatus === undefined) {
+        it.aiStatus = (it.status && it.status !== 'needed') ? it.status : null;
+        it.aiNote = it.note || '';
+      }
+      if (it.manualStatus === undefined) it.manualStatus = null;
+      if (it.manualNote === undefined) it.manualNote = '';
+    }
+    // Convert legacy per-section submittalFiles into job-level packages
+    if (s.submittalFiles && s.submittalFiles.length) {
+      s.submittalFiles.forEach((f, i) => {
+        const pkgId = 'pkg_' + f.id;
+        if (!job.packages.find(p => p.id === pkgId)) {
+          job.packages.push({
+            id: pkgId,
+            number: s.number + '-' + String(i + 1).padStart(2, '0'),
+            status: 'preparing',
+            sectionIds: [s.id],
+            submittedDate: null, returnedDate: null, note: '',
+            revisions: [{ rev: 0, fileId: null, fileName: f.name, uploadedAt: job.created || Date.now() }]
+          });
+        }
+      });
+      // Re-point item.foundIn to package ids
+      for (const it of (s.submittals || [])) {
+        if (it.foundIn && it.foundIn.submittalId) {
+          const pkgId = 'pkg_' + it.foundIn.submittalId;
+          it.foundIn = {
+            packageId: pkgId,
+            packageNumber: (job.packages.find(p => p.id === pkgId) || {}).number || it.foundIn.submittalLabel || 'Submittal',
+            fileName: it.foundIn.submittalName || '',
+            found: it.foundIn.found || ''
+          };
+        }
+      }
+      delete s.submittalFiles;
+    }
+  }
+}
+
+function saveJobs() {
+  const toSave = jobs.map(j => ({
+    id: j.id, name: j.name, created: j.created,
+    hasPdf: !!j.hasPdf, pageCount: j.pageCount || 0,
+    specFiles: j.specFiles || [],
+    packages: j.packages || [],
+    sections: j.sections || { div22: [], div23: [] }
+  }));
+  try {
+    localStorage.setItem('speccheck_jobs', JSON.stringify(toSave));
+  } catch (e) {
+    showToast('Could not save job data — browser storage is full', 'error');
+  }
+}
+
+function persistCurrentJob() {
+  if (!currentJob) return;
+  currentJob.sections = specSections;
+  const idx = jobs.findIndex(j => j.id === currentJob.id);
+  if (idx >= 0) jobs[idx] = currentJob;
+  saveJobs();
+}
+
+// ── API Key ──
+const apiKeyInput = document.getElementById('apiKeyInput');
+const apiStatus = document.getElementById('apiStatus');
+function loadApiKey() {
+  const saved = localStorage.getItem('speccheck_gemini_key');
+  if (saved) { apiKeyInput.value = saved; apiKey = saved; apiStatus.classList.add('active'); }
+}
+apiKeyInput.addEventListener('input', () => {
+  apiKey = apiKeyInput.value.trim();
+  try { localStorage.setItem('speccheck_gemini_key', apiKey); } catch {}
+  apiStatus.classList.toggle('active', apiKey.length > 10);
+});
+document.getElementById('apiToggle').addEventListener('click', () => {
+  apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
+});
+loadApiKey();
+
+// ── Helpers ──
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function dataUrlToBlob(dataUrl) {
+  const [meta, b64] = dataUrl.split(',');
+  const mime = (meta.match(/:(.*?);/) || [])[1] || 'application/pdf';
+  return base64ToBlob(b64, mime);
+}
+function base64ToBlob(b64, mime) {
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: mime || 'application/pdf' });
+}
+function blobToBase64(blob) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(blob);
+  });
+}
+function fileToBase64(file) { return blobToBase64(file); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+
+function download(filename, content, mime) {
+  const blob = content instanceof Blob ? content : new Blob([content], { type: mime || 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ── Effective item status (manual override wins over AI verdict) ──
+function effStatus(item) {
+  if (item.manualStatus) return item.manualStatus;   // met|partial|missing|na
+  return item.aiStatus || 'needed';
+}
+function effFound(item) {
+  if (item.manualStatus) return item.manualNote || '';
+  return (item.foundIn && item.foundIn.found) || item.aiNote || '';
+}
+function isManual(item) { return !!item.manualStatus; }
+
+// ── Packages ──
+function allSections() { return [...specSections.div22, ...specSections.div23]; }
+function findSection(id) { return allSections().find(s => s.id === id); }
+function packagesForSection(sectionId) {
+  return (currentJob?.packages || []).filter(p => (p.sectionIds || []).includes(sectionId));
+}
+function findPackage(id) { return (currentJob?.packages || []).find(p => p.id === id); }
+
+function sectionCounts(s) {
+  const items = s.submittals || [];
+  const c = { total: items.length, met: 0, partial: 0, missing: 0, needed: 0, na: 0 };
+  for (const it of items) {
+    const st = effStatus(it);
+    if (st === 'met') c.met++;
+    else if (st === 'partial') c.partial++;
+    else if (st === 'missing') c.missing++;
+    else if (st === 'na') c.na++;
+    else c.needed++;
+  }
+  c.applicable = c.total - c.na;
+  return c;
+}
+
+function computeSectionStatus(s) {
+  if (!s.inScope) return 'out_of_scope';
+  const pkgs = packagesForSection(s.id);
+  const c = sectionCounts(s);
+  if (pkgs.some(p => p.status === 'revise_resubmit')) return 'needs_resubmit';
+  if (pkgs.length && pkgs.every(p => p.status === 'approved' || p.status === 'approved_as_noted')) return 'approved';
+  if (pkgs.some(p => p.status === 'submitted')) return 'submitted';
+  if (c.applicable > 0 && c.met === c.applicable) return 'ready';
+  if (c.met > 0 || c.partial > 0 || pkgs.length) return 'in_progress';
+  return 'not_started';
+}
+
+// ── Jobs home ──
+function showJobsHome() {
+  document.getElementById('jobsHome').style.display = 'block';
+  document.getElementById('workspace').style.display = 'none';
+  document.getElementById('sectionDetail').style.display = 'none';
+  document.getElementById('backBtn').style.display = 'none';
+  document.getElementById('currentJobName').textContent = '';
+  currentJob = null;
+  detailSectionId = null;
+  clearPdfUrlCache();
+  renderJobsGrid();
+}
+
+function renderJobsGrid() {
+  const grid = document.getElementById('jobsGrid');
+  let html = '';
+  for (const job of jobs) {
+    const all = [...(job.sections?.div22 || []), ...(job.sections?.div23 || [])];
+    const items = all.flatMap(s => s.submittals || []);
+    const met = items.filter(i => effStatus(i) === 'met').length;
+    const partial = items.filter(i => effStatus(i) === 'partial').length;
+    const missing = items.filter(i => effStatus(i) === 'missing').length;
+    const needed = items.filter(i => effStatus(i) === 'needed').length;
+    const date = new Date(job.created).toLocaleDateString();
+    const secCount = all.length;
+    html += `<div class="job-card" onclick="openJob('${job.id}')" tabindex="0" role="button"
+        onkeydown="if(event.key==='Enter')openJob('${job.id}')" aria-label="Open job ${escapeHtml(job.name)}">
+      <button class="job-action job-rename" onclick="event.stopPropagation(); renameJob('${job.id}')" title="Rename job" aria-label="Rename job">✎</button>
+      <button class="job-action job-delete" onclick="event.stopPropagation(); deleteJob('${job.id}')" title="Delete job" aria-label="Delete job">✕</button>
+      <div class="job-name">${escapeHtml(job.name)}</div>
+      <div class="job-meta">${secCount} sections · ${(job.packages||[]).length} packages · ${date}</div>
+      <div class="job-stats">
+        <span class="js met" title="Met"><span class="d"></span>${met}</span>
+        <span class="js partial" title="Partial"><span class="d"></span>${partial}</span>
+        <span class="js missing" title="Missing"><span class="d"></span>${missing}</span>
+        <span class="js needed" title="Not checked"><span class="d"></span>${needed}</span>
+      </div>
+    </div>`;
+  }
+  html += `<div class="job-card new-job" onclick="createJob()" tabindex="0" role="button"
+      onkeydown="if(event.key==='Enter')createJob()">
+    <span class="plus">+</span><span class="new-label">New Job</span>
+  </div>`;
+  grid.innerHTML = html;
+}
+
+function createJob() {
+  const name = prompt('Job name (e.g. "Adventist Health Columbia Gorge"):');
+  if (!name || !name.trim()) return;
+  const job = {
+    id: 'job_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    name: name.trim(), created: Date.now(),
+    hasPdf: false, pageCount: 0, specFiles: [], packages: [],
+    sections: { div22: [], div23: [] }
+  };
+  jobs.unshift(job);
+  saveJobs();
+  openJob(job.id);
+}
+
+function renameJob(id) {
+  const job = jobs.find(j => j.id === id);
+  if (!job) return;
+  const name = prompt('New job name:', job.name);
+  if (!name || !name.trim()) return;
+  job.name = name.trim();
+  saveJobs();
+  renderJobsGrid();
+}
+
+function openJob(id) {
+  const job = jobs.find(j => j.id === id);
+  if (!job) return;
+  migrateJob(job);
+  currentJob = job;
+  specSections = job.sections;
+  clearPdfUrlCache();
+
+  document.getElementById('jobsHome').style.display = 'none';
+  document.getElementById('sectionDetail').style.display = 'none';
+  document.getElementById('workspace').style.display = 'block';
+  document.getElementById('backBtn').style.display = 'inline-block';
+  document.getElementById('currentJobName').textContent = job.name;
+
+  const hasSections = specSections.div22.length || specSections.div23.length;
+  if (hasSections) {
+    activeTab = specSections.div22.length ? 'div22' : 'div23';
+    renderAll();
+    switchTab(activeTab);
+  } else {
+    document.getElementById('tabsWrap').style.display = 'none';
+    document.getElementById('filterBar').style.display = 'none';
+    document.getElementById('wsToolbar').style.display = 'none';
+    document.getElementById('statsBar').classList.remove('show');
+    resetPanels();
+  }
+}
+
+function deleteJob(id) {
+  const job = jobs.find(j => j.id === id);
+  if (!job) return;
+  if (!confirm(`Delete "${job.name}"? This cannot be undone.`)) return;
+  jobs = jobs.filter(j => j.id !== id);
+  relKeysForJob(job).forEach(rk => pdfStore.del(id + rk));
+  saveJobs();
+  renderJobsGrid();
+}
+
+function emptyStateHtml(icon, title, hint) {
+  return `<div class="empty-state"><span class="empty-icon">${icon}</span>
+    <div class="empty-title">${title}</div><div class="empty-hint">${hint}</div></div>`;
+}
+function resetPanels() {
+  document.getElementById('panel-div22').innerHTML =
+    emptyStateHtml('🔧', 'No spec loaded', 'Upload a project spec PDF above to generate your submittal checklist');
+  document.getElementById('panel-div23').innerHTML =
+    emptyStateHtml('🌡️', 'No spec loaded', 'Upload a project spec PDF above to generate your submittal checklist');
+}
+resetPanels();
+
+// ── Spec PDF page links ──
+function clearPdfUrlCache() {
+  Object.values(pdfUrlCache).forEach(u => URL.revokeObjectURL(u));
+  pdfUrlCache = {};
+}
+async function openStoredPdf(relKey, page) {
+  if (!currentJob) return;
+  const key = currentJob.id + relKey;
+  if (!pdfUrlCache[key]) {
+    const blob = await pdfStore.get(key);
+    if (!blob) { showToast('PDF not available (re-upload to restore this link)', 'error'); return; }
+    pdfUrlCache[key] = URL.createObjectURL(blob);
+  }
+  window.open(pdfUrlCache[key] + (page ? '#page=' + page : ''), '_blank');
+}
+function openSpecAtPage(page, fileId) {
+  openStoredPdf(fileId ? '::' + fileId : '', page);
+}
+
+// Init
+loadJobs();
+showJobsHome();
+
+// ── Drag & drop / file input ──
+const uploadZone = document.getElementById('uploadZone');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag');
+  const files = [...e.dataTransfer.files].filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+  if (files.length) processSpecFiles(files);
+  else showToast('Please drop PDF files', 'error');
+});
+document.getElementById('specFileInput').addEventListener('change', e => {
+  if (e.target.files.length) processSpecFiles([...e.target.files]);
+  e.target.value = '';
+});
+document.getElementById('importJobInput').addEventListener('change', e => {
+  if (e.target.files[0]) importJob(e.target.files[0]);
+  e.target.value = '';
+});
+
+// ── PDF text extraction ──
+async function extractPdfText(file, onProgress) {
+  if (!PDF_OK) throw new Error('PDF library failed to load — check your internet connection and reload the page');
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = '';
+  const pageOffsets = [];
+  let badPages = 0;
+  for (let i = 1; i <= pdf.numPages; i++) {
+    pageOffsets.push(fullText.length);
+    try {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      fullText += content.items.map(item => item.str).join(' ') + '\n';
+    } catch { badPages++; fullText += '\n'; }
+    if (onProgress) onProgress(i / pdf.numPages);
+  }
+  if (badPages) console.warn(`Skipped ${badPages} unreadable page(s)`);
+  return { text: fullText, pageOffsets, numPages: pdf.numPages };
+}
+function pageForOffset(offset, pageOffsets) {
+  let page = 1;
+  for (let i = 0; i < pageOffsets.length; i++) {
+    if (pageOffsets[i] <= offset) page = i + 1; else break;
+  }
+  return page;
+}
+
+// ── Section header parsing ──
+function parseSections(text, pageOffsets) {
+  const sections = [];
+  const rawMatches = [];
+  let m;
+  // Dash after the number is optional (real specs use both forms).
+  const re2 = /SECTION\s+(2[23]\s*\d{2}\s*\d{2}(?:\.\d+)?)\s*[-–]?\s*([A-Z].{3,120})/gi;
+  while ((m = re2.exec(text)) !== null) {
+    rawMatches.push({ index: m.index, number: m[1].replace(/\s+/g, ' ').trim(), rawTitle: m[2], end: m.index + m[0].length });
+  }
+  const seen = new Set();
+  const unique = rawMatches.filter(mm => {
+    const key = mm.number.replace(/\s/g, '');
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  });
+  for (let i = 0; i < unique.length; i++) {
+    const start = unique[i].end;
+    const end = i + 1 < unique.length ? unique[i + 1].index : text.length;
+    const body = text.slice(start, Math.min(end, start + 15000));
+    const submittals = extractSubmittals(body);
+    if (submittals.length === 0) continue;
+    const num = unique[i].number.replace(/\s/g, '');
+    const div = num.startsWith('22') ? 'div22' : num.startsWith('23') ? 'div23' : null;
+    if (!div) continue;
+    sections.push({
+      id: 'sec_' + num, number: unique[i].number, title: cleanTitle(unique[i].rawTitle),
+      div, submittals, open: false, inScope: true, dueDate: null,
+      approxPage: pageForOffset(unique[i].index, pageOffsets)
+    });
+  }
+  return sections;
+}
+
+function cleanTitle(raw) {
+  let t = raw.replace(/\s+/g, ' ').trim();
+  const stopPatterns = [/\bPART\s+\d/i, /\b\d\.\d{1,2}\b/, /\bGENERAL\b/i, /\bRELATED\s+DOCUMENT/i, /\bSUMMARY\b/i, /\bProject\s*#/i];
+  let cutAt = t.length;
+  for (const p of stopPatterns) {
+    const mm = t.match(p);
+    if (mm && mm.index !== undefined && mm.index < cutAt && mm.index > 2) cutAt = mm.index;
+  }
+  t = t.slice(0, cutAt).trim().replace(/[-–\s]+$/, '').trim();
+  return t.replace(/[^\w\s,\-–\/&().]/g, '')
+    .split(' ').filter(Boolean)
+    .map(w => w.length <= 3 && w === w.toUpperCase() ? w : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+// ── Submittal requirement extraction ──
+function extractSubmittals(text) {
+  const submittals = [];
+  const headingRe = /\d\.\d{1,2}\s+((?:ACTION|INFORMATIONAL|CLOSEOUT)\s+SUBMITTALS?|SUBMITTALS?)(?=\s)/gi;
+  let m;
+  while ((m = headingRe.exec(text)) !== null) {
+    const kind = m[1].toUpperCase();
+    const type = kind.startsWith('ACTION') ? 'Action Submittal'
+      : kind.startsWith('INFORMATIONAL') ? 'Informational Submittal'
+      : kind.startsWith('CLOSEOUT') ? 'Closeout Submittal' : 'Submittal';
+    const rest = text.slice(m.index + m[0].length, m.index + m[0].length + 9000);
+    const endM = rest.match(/\d\.\d{1,2}\s+[A-Z][A-Z]|PART\s+[23]\b/);
+    const block = endM ? rest.slice(0, endM.index) : rest;
+    parseSubmittalBlock(block, type, submittals);
+  }
+  const unique = [];
+  for (const item of submittals) {
+    if (!unique.find(u => u.type === item.type && u.name.slice(0, 30).toLowerCase() === item.name.slice(0, 30).toLowerCase())) {
+      unique.push(item);
+    }
+  }
+  return unique;
+}
+
+function parseSubmittalBlock(text, type, out) {
+  let cleaned = text.replace(/\s+/g, ' ').trim();
+  cleaned = cleaned.replace(/\b\d{2}\s?\d{2}\s?\d{2}(?:\.\d+)?\s*-\s*\d+\b/g, ' ');
+  const broken = cleaned.replace(/(^|\s)([A-Z])\.\s+(?=[A-Z])/g, '\n$2. ');
+  const lines = broken.split('\n').map(l => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    const letterMatch = line.match(/^([A-Z])\.\s+(.+)/);
+    if (!letterMatch) continue;
+    const requirement = letterMatch[2].replace(/\s+/g, ' ').trim();
+    let name = requirement;
+    const cut = name.search(/(?<=\w)[:.]\s|\s\d+\.\s/);
+    if (cut > 3) name = name.slice(0, cut).trim();
+    name = name.replace(/[:.]?\s*$/, '').trim();
+    if (requirement.length > 3 && requirement.length < 1500 && name.length > 2) {
+      out.push({
+        id: Math.random().toString(36).slice(2),
+        name: name.slice(0, 140), requirement, type,
+        aiStatus: null, aiNote: '',
+        manualStatus: null, manualNote: '',
+        foundIn: null
+      });
+    }
+  }
+}
+
+// ── Spec file processing (combined or per-section) ──
+function sectionNumberFromFilename(name) {
+  const m = name.match(/(2[23])[\s._-]*(\d{2})[\s._-]*(\d{2})(\.\d+)?/);
+  return m ? `${m[1]} ${m[2]} ${m[3]}${m[4] || ''}` : null;
+}
+function titleFromFilename(name, num) {
+  let t = name.replace(/\.pdf$/i, '').replace(/_?Rev[\s._-]*\d+$/i, '');
+  if (num) t = t.replace(/^[\d\s._-]+/, '');
+  return cleanTitle(t.replace(/[-_]+/g, ' ').trim()) || 'Untitled Section';
+}
+
+async function processSpecFiles(files) {
+  if (!currentJob) { showToast('Open or create a job first', 'error'); return; }
+  if (processingSpec) return;
+  if (!PDF_OK) { showToast('PDF library failed to load — check your connection and reload the page', 'error'); return; }
+  processingSpec = true;
+  uploadZone.classList.add('busy');
+  const skipped = [];
+  let added = 0, replaced = 0;
+  try {
+    for (let fi = 0; fi < files.length; fi++) {
+      const file = files[fi];
+      const fileLabel = files.length > 1 ? `(${fi + 1}/${files.length}) ${file.name}` : file.name;
+      setProgress(true, `Reading ${fileLabel}…`, (fi / files.length) * 100);
+      let parsed;
+      try {
+        const { text, pageOffsets, numPages } = await extractPdfText(file,
+          p => setProgress(true, `Extracting ${fileLabel}… ${Math.round(p * 100)}%`, ((fi + p * 0.8) / files.length) * 100));
+        if (!text.trim()) throw new Error('no text layer (scanned?)');
+        let secs = parseSections(text, pageOffsets);
+        if (secs.length === 0) {
+          const num = sectionNumberFromFilename(file.name);
+          const submittals = num ? extractSubmittals(text) : [];
+          if (num && submittals.length) {
+            secs = [{
+              id: 'sec_' + num.replace(/\s/g, ''), number: num, title: titleFromFilename(file.name, num),
+              div: num.startsWith('22') ? 'div22' : 'div23', submittals, open: false,
+              inScope: true, dueDate: null, approxPage: 1
+            }];
+          }
+        }
+        parsed = { secs, numPages };
+      } catch (err) { skipped.push(`${file.name} (${err.message})`); continue; }
+
+      if (parsed.secs.length === 0) { skipped.push(`${file.name} (no Division 22/23 submittal requirements found)`); continue; }
+
+      const fid = 'f_' + Date.now() + '_' + fi;
+      let stored = false;
+      try { await pdfStore.put(currentJob.id + '::' + fid, file); stored = true; } catch {}
+      if (stored) currentJob.specFiles.push({ id: fid, name: file.name, pageCount: parsed.numPages });
+
+      for (const s of parsed.secs) {
+        if (stored) s.fileId = fid;
+        const arr = specSections[s.div];
+        const idx = arr.findIndex(x => x.id === s.id);
+        if (idx >= 0) {
+          // Preserve scope/due/manual overrides where the item still exists
+          const old = arr[idx];
+          s.inScope = old.inScope; s.dueDate = old.dueDate;
+          const oldById = {};
+          (old.submittals || []).forEach(o => { oldById[o.name.slice(0,40).toLowerCase()] = o; });
+          s.submittals.forEach(n => {
+            const o = oldById[n.name.slice(0,40).toLowerCase()];
+            if (o) { n.manualStatus = o.manualStatus; n.manualNote = o.manualNote; n.aiStatus = o.aiStatus; n.aiNote = o.aiNote; n.foundIn = o.foundIn; }
+          });
+          arr[idx] = s; replaced++;
+        } else { arr.push(s); added++; }
+      }
+    }
+    specSections.div22.sort((a, b) => a.number.localeCompare(b.number));
+    specSections.div23.sort((a, b) => a.number.localeCompare(b.number));
+    persistCurrentJob();
+    setProgress(false);
+
+    if (added + replaced > 0) {
+      activeTab = specSections.div22.length ? (activeTab === 'div23' && specSections.div23.length ? 'div23' : 'div22') : 'div23';
+      renderAll();
+      switchTab(activeTab);
+      const bits = [];
+      if (added) bits.push(`${added} section${added === 1 ? '' : 's'} added`);
+      if (replaced) bits.push(`${replaced} updated`);
+      showToast(bits.join(', ') + ` — ${specSections.div22.length} Plumbing, ${specSections.div23.length} HVAC total`, 'success');
+    }
+    if (skipped.length) {
+      console.warn('Skipped spec files:', skipped);
+      showToast(`Skipped ${skipped.length} file${skipped.length === 1 ? '' : 's'}: ${skipped.map(s => s.split(' (')[0]).join(', ')}`, added + replaced > 0 ? '' : 'error');
+    }
+  } finally {
+    processingSpec = false;
+    uploadZone.classList.remove('busy');
+    setProgress(false);
+  }
+}
+
+// ── Render section list ──
+function renderAll() {
+  document.getElementById('tabsWrap').style.display = 'flex';
+  document.getElementById('filterBar').style.display = 'flex';
+  document.getElementById('wsToolbar').style.display = 'flex';
+  document.getElementById('count22').textContent = specSections.div22.length;
+  document.getElementById('count23').textContent = specSections.div23.length;
+  renderPanel('div22');
+  renderPanel('div23');
+  updateStats();
+}
+
+function dueInfo(s) {
+  if (!s.dueDate) return { html: '' };
+  const today = todayISO();
+  const diff = (new Date(s.dueDate) - new Date(today)) / 86400000;
+  let cls = '';
+  const done = ['approved'].includes(computeSectionStatus(s));
+  if (!done && diff < 0) cls = 'overdue';
+  else if (!done && diff <= 7) cls = 'soon';
+  const label = new Date(s.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return { html: `<span class="due-tag ${cls}" title="Due ${s.dueDate}">⏱ ${label}</span>` };
+}
+
+function renderPanel(div) {
+  const panel = document.getElementById('panel-' + div);
+  let sections = specSections[div].slice();
+
+  // Sort
+  if (listSort === 'number') sections.sort((a, b) => a.number.localeCompare(b.number));
+  else if (listSort === 'status') sections.sort((a, b) => SECTION_STATUS_ORDER.indexOf(computeSectionStatus(a)) - SECTION_STATUS_ORDER.indexOf(computeSectionStatus(b)) || a.number.localeCompare(b.number));
+  else if (listSort === 'due') sections.sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999') || a.number.localeCompare(b.number));
+
+  // Filter
+  sections = sections.filter(s => matchesFilter(s));
+
+  if (specSections[div].length === 0) {
+    panel.innerHTML = emptyStateHtml(div === 'div22' ? '🔧' : '🌡️', 'No sections found', `No Division ${div === 'div22' ? '22' : '23'} submittal requirements found in this spec`);
+    return;
+  }
+  if (sections.length === 0) {
+    panel.innerHTML = emptyStateHtml('🔍', 'Nothing matches this filter', 'Try a different filter above');
+    return;
+  }
+  panel.innerHTML = sections.map(renderSectionCard).join('');
+}
+
+function matchesFilter(s) {
+  if (listFilter === 'all') return true;
+  const st = computeSectionStatus(s);
+  if (listFilter === 'todo') return ['not_started', 'in_progress', 'needs_resubmit'].includes(st);
+  return st === listFilter;
+}
+
+function renderSectionCard(s) {
+  const status = computeSectionStatus(s);
+  const c = sectionCounts(s);
+  let progressText;
+  if (!s.inScope) progressText = 'excluded';
+  else {
+    const bits = [];
+    if (c.met) bits.push(`${c.met} met`);
+    if (c.partial) bits.push(`${c.partial} partial`);
+    if (c.missing) bits.push(`${c.missing} missing`);
+    if (c.needed) bits.push(`${c.needed} to check`);
+    progressText = bits.length ? bits.join(' · ') : `${c.total} required`;
+  }
+  const pageRefHtml = s.approxPage
+    ? `<a class="page-ref" onclick="event.stopPropagation(); openSpecAtPage(${s.approxPage}, '${escapeHtml(s.fileId || '')}')" title="Open spec PDF at this section">PDF p.${s.approxPage} ↗</a>` : '';
+  const due = dueInfo(s).html;
+  return `<div class="section-card navigable ${s.inScope ? '' : 'oos'}" id="${escapeHtml(s.id)}" onclick="openSection('${escapeHtml(s.id)}')">
+    <div class="section-header">
+      <div class="section-left">
+        <span class="section-number">${escapeHtml(s.number)}</span>
+        <span class="section-title">${escapeHtml(s.title)}</span>
+        <span class="sstat ${status}">${SECTION_STATUS_LABEL[status]}</span>
+        ${due}
+      </div>
+      <div class="section-right">
+        ${pageRefHtml}
+        <span class="section-progress">${progressText}</span>
+        <span class="nav-arrow">›</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function setFilter(f) {
+  listFilter = f;
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.toggle('active', c.dataset.filter === f));
+  renderPanel('div22'); renderPanel('div23');
+}
+function setSort(v) { listSort = v; renderPanel('div22'); renderPanel('div23'); }
+
+// ── Section detail ──
+function openSection(id) {
+  const s = findSection(id);
+  if (!s) return;
+  detailSectionId = id;
+  activeTab = s.div || activeTab;
+  document.getElementById('workspace').style.display = 'none';
+  document.getElementById('jobsHome').style.display = 'none';
+  document.getElementById('sectionDetail').style.display = 'block';
+  document.getElementById('backBtn').style.display = 'none';
+  document.getElementById('currentJobName').textContent = currentJob ? currentJob.name : '';
+  renderSectionDetail(s);
+  window.scrollTo(0, 0);
+}
+function backToSectionList() {
+  detailSectionId = null;
+  document.getElementById('sectionDetail').style.display = 'none';
+  document.getElementById('workspace').style.display = 'block';
+  document.getElementById('backBtn').style.display = 'inline-block';
+  renderAll();
+  switchTab(activeTab);
+}
+
+function renderSectionDetail(s) {
+  const c = sectionCounts(s);
+  const matched = s.submittals.filter(x => effStatus(x) === 'met');
+  const partial = s.submittals.filter(x => effStatus(x) === 'partial');
+  const missing = s.submittals.filter(x => effStatus(x) === 'missing');
+  const needed = s.submittals.filter(x => effStatus(x) === 'needed');
+  const na = s.submittals.filter(x => effStatus(x) === 'na');
+  const status = computeSectionStatus(s);
+
+  const pageRefHtml = s.approxPage
+    ? `<a class="page-ref" onclick="openSpecAtPage(${s.approxPage}, '${escapeHtml(s.fileId || '')}')" title="Open spec PDF at this section">PDF p.${s.approxPage} ↗</a>` : '';
+
+  const summaryChips = `
+    <div class="summary-chip matched"><span class="n">${matched.length}</span> Met</div>
+    <div class="summary-chip partial"><span class="n">${partial.length}</span> Partial</div>
+    <div class="summary-chip missing"><span class="n">${missing.length}</span> Missing</div>
+    ${needed.length ? `<div class="summary-chip needed"><span class="n">${needed.length}</span> Not checked</div>` : ''}
+    ${na.length ? `<div class="summary-chip na"><span class="n">${na.length}</span> N/A</div>` : ''}`;
+
+  const groups = [];
+  if (missing.length) groups.push(renderResultGroup(s, 'missing', '✕', 'Still Needed — source or request these', missing));
+  if (partial.length) groups.push(renderResultGroup(s, 'partial', '!', 'Partial — incomplete, needs follow-up', partial));
+  if (needed.length) groups.push(renderResultGroup(s, 'needed', '·', 'Not Yet Checked', needed));
+  if (matched.length) groups.push(renderResultGroup(s, 'matched', '✓', 'Met — satisfied', matched));
+  if (na.length) groups.push(renderResultGroup(s, 'na', '–', 'Not Applicable to this scope', na));
+
+  document.getElementById('sectionDetail').innerHTML = `
+    <div class="detail-head">
+      <div class="detail-crumb">
+        <button class="back-btn" onclick="backToSectionList()">← ${escapeHtml(currentJob ? currentJob.name : 'Sections')}</button>
+        <button class="back-btn" onclick="showJobsHome()">Jobs</button>
+      </div>
+      <div class="detail-title-row">
+        <span class="detail-number">${escapeHtml(s.number)}</span>
+        <span class="detail-title">${escapeHtml(s.title)}</span>
+        ${pageRefHtml}
+      </div>
+      <div class="detail-controls">
+        <span class="sstat ${status}">${SECTION_STATUS_LABEL[status]}</span>
+        <label class="switch" title="Include this section in your scope">
+          <input type="checkbox" ${s.inScope ? 'checked' : ''} onchange="toggleScope('${s.id}', this.checked)">
+          <span class="track"></span> In scope
+        </label>
+        <label>Due <input type="date" value="${s.dueDate || ''}" onchange="setDueDate('${s.id}', this.value)"></label>
+      </div>
+      <div class="detail-summary">${summaryChips}</div>
+    </div>
+    <div class="detail-body">
+      <p class="detail-section-label">Submittal Packages</p>
+      ${renderPackages(s)}
+      <p class="detail-section-label" style="margin-top:26px;">Spec Requirements (${c.total})</p>
+      ${groups.join('') || '<div class="detail-empty"><div class="de-title">No requirements parsed</div></div>'}
+    </div>`;
+}
+
+function toggleScope(sectionId, val) {
+  const s = findSection(sectionId);
+  if (!s) return;
+  s.inScope = val;
+  persistCurrentJob();
+  renderSectionDetail(s);
+  updateStats();
+}
+function setDueDate(sectionId, val) {
+  const s = findSection(sectionId);
+  if (!s) return;
+  s.dueDate = val || null;
+  persistCurrentJob();
+}
+
+// ── Packages UI ──
+function renderPackages(s) {
+  const pkgs = packagesForSection(s.id);
+  const otherSections = allSections().filter(x => x.id !== s.id);
+  let html = '';
+  if (!pkgs.length) {
+    html += `<div class="detail-empty">
+      <span class="de-icon">📎</span>
+      <div class="de-title">No submittal package yet</div>
+      <div class="de-hint">Create a package, upload the vendor PDF, and ${apiKey ? 'it will be checked against the spec automatically.' : 'add a Gemini API key (header) to auto-check it — or set each item manually below.'}</div>
+    </div>`;
+  } else {
+    html += '<div class="pkg-list">' + pkgs.map(p => renderPackageCard(p, s, otherSections)).join('') + '</div>';
+  }
+  html += `<button class="btn" onclick="addPackage('${s.id}')">＋ New submittal package</button>`;
+  return html;
+}
+
+function renderPackageCard(p, s, otherSections) {
+  const statusOptions = Object.entries(PKG_STATUSES).map(([k, v]) =>
+    `<option value="${k}" ${p.status === k ? 'selected' : ''}>${v}</option>`).join('');
+  const applies = (p.sectionIds || []).map(sid => {
+    const sec = findSection(sid);
+    const label = sec ? sec.number : sid;
+    const removable = (p.sectionIds.length > 1);
+    return `<span class="applies-chip">${escapeHtml(label)}${removable ? `<span class="x" onclick="removePackageSection('${p.id}','${sid}')" title="Remove">✕</span>` : ''}</span>`;
+  }).join('');
+  const addOptions = otherSections.filter(o => !(p.sectionIds || []).includes(o.id))
+    .map(o => `<option value="${o.id}">${escapeHtml(o.number)} — ${escapeHtml(o.title)}</option>`).join('');
+  const revs = (p.revisions || []).map(r => `
+    <div class="rev-row">
+      <span>Rev ${r.rev}</span>
+      ${r.fileId ? `<span class="rev-open" onclick="openStoredPdf('::pkg::${r.fileId}')">${escapeHtml(r.fileName)} ↗</span>` : `<span>${escapeHtml(r.fileName || '(no file)')}</span>`}
+    </div>`).join('');
+  const nextRev = (p.revisions && p.revisions.length) ? `Upload Rev ${p.revisions[p.revisions.length - 1].rev + 1}` : 'Upload submittal PDF';
+  return `<div class="pkg-card">
+    <div class="pkg-top">
+      <span class="pkg-num">${escapeHtml(p.number)}</span>
+      <span class="pkg-rev">${p.revisions && p.revisions.length ? 'Rev ' + p.revisions[p.revisions.length - 1].rev : 'no file'}</span>
+      <select class="pkg-status-select ${p.status}" onchange="setPackageStatus('${p.id}', this.value)" title="Package status">${statusOptions}</select>
+      <span class="pkg-spacer"></span>
+      <button class="btn subtle" onclick="renamePackage('${p.id}')" title="Edit package number">✎</button>
+      <button class="btn danger" onclick="deletePackage('${p.id}')" title="Delete package">🗑</button>
+    </div>
+    <div class="pkg-body">
+      <div class="pkg-applies">
+        <span class="ov-label">Applies to:</span> ${applies}
+        ${addOptions ? `<select onchange="if(this.value){addPackageSection('${p.id}', this.value); this.value='';}">
+          <option value="">+ add section…</option>${addOptions}</select>` : ''}
+      </div>
+      <div class="pkg-row">
+        <label>Submitted <input type="date" value="${p.submittedDate || ''}" onchange="setPackageDate('${p.id}','submittedDate',this.value)"></label>
+        <label>Returned <input type="date" value="${p.returnedDate || ''}" onchange="setPackageDate('${p.id}','returnedDate',this.value)"></label>
+      </div>
+      ${revs ? `<div class="rev-list">${revs}</div>` : ''}
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <label class="upload-btn" id="pkgbtn_${p.id}">
+          📎 ${nextRev}
+          <input type="file" accept=".pdf,application/pdf" onchange="uploadPackageRevision('${p.id}', this)">
+        </label>
+        ${(p.revisions && p.revisions.some(r => r.fileId)) ? `<button class="btn subtle" onclick="recheckPackage('${p.id}')">↻ Re-check vs spec</button>` : ''}
+        <span id="pkgspin_${p.id}" style="display:none"><span class="checking-spinner"></span> Checking…</span>
+      </div>
+      <div class="pkg-note">${p.note ? escapeHtml(p.note) : '<span style="color:var(--text-muted)">No note</span>'}<span class="edit" onclick="editPackageNote('${p.id}')">✎ edit</span></div>
+    </div>
+  </div>`;
+}
+
+function nextPackageNumber(section) {
+  const base = section.number.replace(/\s/g, ' ').trim();
+  const existing = (currentJob.packages || []).filter(p => (p.sectionIds || []).includes(section.id)).length;
+  return `${base}-${String(existing + 1).padStart(2, '0')}`;
+}
+function addPackage(sectionId) {
+  const s = findSection(sectionId);
+  if (!s) return;
+  const pkg = {
+    id: 'pkg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    number: nextPackageNumber(s),
+    status: 'preparing', sectionIds: [sectionId],
+    submittedDate: null, returnedDate: null, note: '', revisions: []
+  };
+  currentJob.packages.push(pkg);
+  persistCurrentJob();
+  renderSectionDetail(s);
+}
+function renamePackage(pkgId) {
+  const p = findPackage(pkgId);
+  if (!p) return;
+  const v = prompt('Package number / label:', p.number);
+  if (v && v.trim()) { p.number = v.trim(); persistCurrentJob(); refreshDetail(); }
+}
+function deletePackage(pkgId) {
+  const p = findPackage(pkgId);
+  if (!p) return;
+  if (!confirm(`Delete package "${p.number}"? Its files and check results will be removed.`)) return;
+  (p.revisions || []).forEach(r => { if (r.fileId) pdfStore.del(currentJob.id + '::pkg::' + r.fileId); });
+  // Clear item references to this package
+  allSections().forEach(s => (s.submittals || []).forEach(it => {
+    if (it.foundIn && it.foundIn.packageId === pkgId) { it.foundIn = null; if (it.aiStatus) { it.aiStatus = null; it.aiNote = ''; } }
+  }));
+  currentJob.packages = currentJob.packages.filter(x => x.id !== pkgId);
+  persistCurrentJob();
+  refreshDetail();
+  updateStats();
+}
+function setPackageStatus(pkgId, status) {
+  const p = findPackage(pkgId);
+  if (!p) return;
+  p.status = status;
+  if (status === 'submitted' && !p.submittedDate) p.submittedDate = todayISO();
+  if ((status === 'approved' || status === 'approved_as_noted' || status === 'revise_resubmit') && !p.returnedDate) p.returnedDate = todayISO();
+  persistCurrentJob();
+  refreshDetail();
+}
+function setPackageDate(pkgId, field, val) {
+  const p = findPackage(pkgId);
+  if (!p) return;
+  p[field] = val || null;
+  persistCurrentJob();
+}
+function editPackageNote(pkgId) {
+  const p = findPackage(pkgId);
+  if (!p) return;
+  const v = prompt('Package note (e.g. reviewer comments, transmittal #):', p.note || '');
+  if (v === null) return;
+  p.note = v.trim();
+  persistCurrentJob();
+  refreshDetail();
+}
+function addPackageSection(pkgId, sectionId) {
+  const p = findPackage(pkgId);
+  if (!p || p.sectionIds.includes(sectionId)) return;
+  p.sectionIds.push(sectionId);
+  persistCurrentJob();
+  refreshDetail();
+  showToast('Package now also covers ' + (findSection(sectionId)?.number || ''), '');
+}
+function removePackageSection(pkgId, sectionId) {
+  const p = findPackage(pkgId);
+  if (!p) return;
+  p.sectionIds = p.sectionIds.filter(x => x !== sectionId);
+  if (!p.sectionIds.length) { deletePackage(pkgId); return; }
+  persistCurrentJob();
+  refreshDetail();
+}
+
+function refreshDetail() {
+  const s = findSection(detailSectionId);
+  if (s && document.getElementById('sectionDetail').style.display === 'block') renderSectionDetail(s);
+}
+
+// ── Package upload + AI check ──
+async function uploadPackageRevision(pkgId, input) {
+  if (!input.files[0]) return;
+  const file = input.files[0];
+  input.value = '';
+  const p = findPackage(pkgId);
+  if (!p) return;
+  const rev = (p.revisions && p.revisions.length) ? p.revisions[p.revisions.length - 1].rev + 1 : 0;
+  const fileId = 'r_' + Date.now();
+  let stored = false;
+  try { await pdfStore.put(currentJob.id + '::pkg::' + fileId, file); stored = true; } catch {}
+  p.revisions = p.revisions || [];
+  p.revisions.push({ rev, fileId: stored ? fileId : null, fileName: file.name, uploadedAt: Date.now() });
+  persistCurrentJob();
+  refreshDetail();
+  await runPackageCheck(p, file);
+}
+
+async function recheckPackage(pkgId) {
+  const p = findPackage(pkgId);
+  if (!p || !p.revisions || !p.revisions.length) return;
+  const last = [...p.revisions].reverse().find(r => r.fileId);
+  if (!last) { showToast('No stored file to re-check', 'error'); return; }
+  const blob = await pdfStore.get(currentJob.id + '::pkg::' + last.fileId);
+  if (!blob) { showToast('Stored file unavailable', 'error'); return; }
+  await runPackageCheck(p, new File([blob], last.fileName, { type: 'application/pdf' }));
+}
+
+function setPkgSpinner(pkgId, on) {
+  const spin = document.getElementById('pkgspin_' + pkgId);
+  const btn = document.getElementById('pkgbtn_' + pkgId);
+  if (spin) spin.style.display = on ? 'inline-flex' : 'none';
+  if (btn) btn.classList.toggle('loading', on);
+}
+
+async function runPackageCheck(p, file) {
+  if (!apiKey) {
+    showToast('Package saved — add a Gemini API key (header) to auto-check, or set items manually', '');
+    return;
+  }
+  setPkgSpinner(p.id, true);
+  try {
+    let submittalText = '';
+    try { submittalText = (await extractPdfText(file)).text; } catch {}
+    let pdfPart = null;
+    if (submittalText.trim().length < 500) {
+      if (file.size > 18 * 1024 * 1024) throw new Error('Scanned PDF too large to check directly — try an OCR\'d copy');
+      pdfPart = await fileToBase64(file);
+      showToast('Scanned PDF — sending document to Gemini for reading', '');
+    }
+    // Gather items across all sections this package covers
+    const entries = [];
+    for (const sid of p.sectionIds) {
+      const sec = findSection(sid);
+      if (!sec) continue;
+      (sec.submittals || []).forEach(it => entries.push({ sec, it }));
+    }
+    if (!entries.length) { showToast('No requirements to check', 'error'); return; }
+    const requirementsText = entries.map((e, i) =>
+      `${i}. [${e.sec.number} · ${e.it.type}] ${e.it.requirement || e.it.name}`).join('\n\n');
+
+    const result = await checkSubmittalVsSpec(requirementsText, submittalText, p.sectionIds.map(id => findSection(id)?.title).filter(Boolean).join(', '), pdfPart);
+
+    let filled = 0;
+    if (result && Array.isArray(result.items)) {
+      result.items.forEach(r => {
+        if (!r || !['met', 'partial', 'missing'].includes(r.status)) return;
+        let entry = null;
+        if (typeof r.index === 'number' && entries[r.index]) entry = entries[r.index];
+        if (!entry && typeof r.name === 'string') {
+          entry = entries.find(e => (e.it.requirement || e.it.name).toLowerCase().includes(r.name.toLowerCase().slice(0, 20)) ||
+            r.name.toLowerCase().includes(e.it.name.toLowerCase().slice(0, 20)));
+        }
+        if (!entry) return;
+        const it = entry.it;
+        // Don't let this package downgrade an item another package already met
+        if (it.aiStatus === 'met' && r.status !== 'met' && it.foundIn && it.foundIn.packageId !== p.id) return;
+        it.aiStatus = r.status;
+        it.aiNote = r.note || '';
+        if (r.status === 'met' || r.status === 'partial') {
+          it.foundIn = { packageId: p.id, packageNumber: p.number, fileName: file.name, found: r.found || r.note || '' };
+          if (r.status === 'met') filled++;
+        }
+      });
+    }
+    persistCurrentJob();
+    refreshDetail();
+    updateStats();
+    showToast(`${p.number} checked — ${filled} requirement${filled === 1 ? '' : 's'} newly met`, 'success');
+  } catch (err) {
+    persistCurrentJob();
+    refreshDetail();
+    showToast('Check failed: ' + err.message, 'error');
+    console.error(err);
+  } finally {
+    setPkgSpinner(p.id, false);
+  }
+}
+
+// ── Item manual override ──
+function setItemStatus(sectionId, itemId, val) {
+  const s = findSection(sectionId);
+  if (!s) return;
+  const it = (s.submittals || []).find(x => x.id === itemId);
+  if (!it) return;
+  it.manualStatus = (val === 'ai') ? null : val;
+  persistCurrentJob();
+  renderSectionDetail(s);
+  updateStats();
+}
+function editItemNote(sectionId, itemId) {
+  const s = findSection(sectionId);
+  if (!s) return;
+  const it = (s.submittals || []).find(x => x.id === itemId);
+  if (!it) return;
+  const cur = it.manualStatus ? it.manualNote : it.aiNote;
+  const v = prompt('Note for this requirement:', cur || '');
+  if (v === null) return;
+  if (it.manualStatus) it.manualNote = v.trim(); else it.aiNote = v.trim();
+  persistCurrentJob();
+  renderSectionDetail(s);
+}
+
+// ── Result groups / items ──
+function renderResultGroup(section, type, icon, title, items) {
+  return `<div class="result-group group-${type}">
+    <div class="group-header">
+      <div class="group-icon">${icon}</div>
+      <div class="group-title">${title}</div>
+      <div class="group-subtitle">${items.length} ${items.length === 1 ? 'item' : 'items'}</div>
+    </div>
+    ${items.map(it => renderResultItem(section, it)).join('')}
+  </div>`;
+}
+
+function renderResultItem(section, item) {
+  const reqText = item.requirement || item.name;
+  const st = effStatus(item);
+  const found = effFound(item);
+
+  let foundHtml;
+  if (st === 'met' || st === 'partial') {
+    const src = item.foundIn;
+    const srcTag = (src && !item.manualStatus) ? `<div class="found-source">✓ ${escapeHtml(src.packageNumber || 'Submittal')}${src.fileName ? ' — ' + escapeHtml(src.fileName) : ''}</div>` : '';
+    foundHtml = `${srcTag}<div class="found-text">${found ? escapeHtml(found) : 'Addressed in submittal'}</div>`;
+  } else if (st === 'missing') {
+    foundHtml = `<div class="found-text missing-text">Not found in any uploaded submittal${found ? ' — ' + escapeHtml(found) : ''}</div>`;
+  } else if (st === 'na') {
+    foundHtml = `<div class="found-text muted-text">Marked not applicable${found ? ' — ' + escapeHtml(found) : ''}</div>`;
+  } else {
+    foundHtml = `<div class="found-text muted-text">Not checked yet</div>`;
+  }
+
+  const verdictTag = item.manualStatus
+    ? `<span class="verdict-tag manual">✎ set by you</span>`
+    : (item.aiStatus ? `<span class="verdict-tag ai">AI</span>` : '');
+
+  const ovBtn = (val, label) => {
+    const active = (val === 'ai') ? !item.manualStatus : item.manualStatus === val;
+    return `<button class="ov-btn ${val} ${active ? 'active' : ''}" onclick="setItemStatus('${section.id}','${item.id}','${val}')">${label}</button>`;
+  };
+  const noteLabel = (item.manualStatus ? item.manualNote : item.aiNote) ? 'edit note' : '＋ note';
+
+  return `<div class="result-item">
+    <div class="result-type">${escapeHtml(item.type)} ${verdictTag}</div>
+    <div class="req-found">
+      <div class="rf-col rf-required"><div class="rf-label">Required (spec)</div><div class="rf-body">${escapeHtml(reqText)}</div></div>
+      <div class="rf-col rf-found"><div class="rf-label">Found (submittal)</div><div class="rf-body">${foundHtml}</div></div>
+    </div>
+    <div class="item-controls">
+      <span class="ov-label">Set:</span>
+      <div class="ov-bar">
+        ${ovBtn('ai', 'AI')}${ovBtn('met', 'Met')}${ovBtn('partial', 'Partial')}${ovBtn('missing', 'Missing')}${ovBtn('na', 'N/A')}
+      </div>
+      <button class="item-note-btn" onclick="editItemNote('${section.id}','${item.id}')">${noteLabel}</button>
+    </div>
+    ${(item.manualStatus && item.manualNote) ? `<div class="item-note">${escapeHtml(item.manualNote)}</div>` : ''}
+  </div>`;
+}
+
+// ── Gemini API ──
+async function checkSubmittalVsSpec(requirements, submittalText, sectionTitle, pdfBase64) {
+  const prompt = `You are a construction spec compliance expert reviewing a vendor submittal against specification section requirements.
+
+SPECIFICATION SECTION(S): ${sectionTitle}
+
+REQUIRED SUBMITTALS (verbatim spec text, numbered from 0):
+${requirements}
+
+${pdfBase64 ? 'The vendor submittal is attached as a PDF document.' : `VENDOR SUBMITTAL TEXT (extracted from PDF):
+${submittalText.slice(0, 60000)}`}
+
+For each required submittal item above, determine whether THIS vendor submittal satisfies it.
+
+Respond ONLY with valid JSON in this exact format, no other text:
+{
+  "items": [
+    { "index": 0, "status": "met" | "partial" | "missing", "found": "what specifically was located (or empty)", "note": "brief reasoning, max 25 words" }
+  ]
+}
+
+Rules:
+- "index" MUST be the number of the requirement from the list above.
+- "met" = submittal clearly satisfies the requirement
+- "partial" = addressed but incomplete or unclear
+- "missing" = no evidence in this submittal
+- "found" should quote/paraphrase the matching submittal content (under 30 words). Empty if missing.
+- Include every item from the list. Be factual and concise.`;
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const attempt = async () => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 90000);
+    try {
+      const res = await fetch(url, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: pdfBase64 ? [{ text: prompt }, { inline_data: { mime_type: 'application/pdf', data: pdfBase64 } }] : [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 8192, responseMimeType: 'application/json' }
+        }),
+        signal: ctrl.signal
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const e = new Error(err?.error?.message || `Gemini API error ${res.status}`);
+        e.retryable = res.status === 429 || res.status >= 500;
+        throw e;
+      }
+      const data = await res.json();
+      const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const jsonMatch = raw.replace(/```json|```/g, '').match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('Gemini returned an unreadable response — try again');
+      return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      if (e.name === 'AbortError') { const t = new Error('Gemini request timed out — try again'); t.retryable = true; throw t; }
+      throw e;
+    } finally { clearTimeout(timer); }
+  };
+  try { return await attempt(); }
+  catch (e) { if (!e.retryable) throw e; await sleep(2000); return attempt(); }
+}
+
+// ── Stats ──
+function updateStats() {
+  const inScope = allSections().filter(s => s.inScope);
+  const all = inScope.flatMap(s => s.submittals || []);
+  const by = st => all.filter(x => effStatus(x) === st).length;
+  document.getElementById('statNeeded').textContent = by('needed');
+  document.getElementById('statMet').textContent = by('met');
+  document.getElementById('statPartial').textContent = by('partial');
+  document.getElementById('statMissing').textContent = by('missing');
+  document.getElementById('statNa').textContent = by('na');
+  document.getElementById('statsBar').classList.toggle('show', all.length > 0);
+}
+
+// ── Register export ──
+function registerRows() {
+  const rows = [];
+  for (const s of allSections()) {
+    const c = sectionCounts(s);
+    const status = computeSectionStatus(s);
+    const pkgs = packagesForSection(s.id);
+    const outstanding = (s.submittals || []).filter(it => ['missing', 'partial'].includes(effStatus(it))).map(it => it.name);
+    const base = {
+      section: s.number, title: s.title, scope: s.inScope ? 'In scope' : 'Out of scope',
+      sectionStatus: SECTION_STATUS_LABEL[status], due: s.dueDate || '',
+      total: c.total, met: c.met, partial: c.partial, missing: c.missing, na: c.na,
+      outstanding: outstanding.join('; ')
+    };
+    if (!pkgs.length) {
+      rows.push({ ...base, pkg: '', rev: '', pkgStatus: '', submitted: '', returned: '' });
+    } else {
+      pkgs.forEach(p => {
+        const lastRev = (p.revisions && p.revisions.length) ? p.revisions[p.revisions.length - 1].rev : '';
+        rows.push({ ...base, pkg: p.number, rev: lastRev, pkgStatus: PKG_STATUSES[p.status] || p.status, submitted: p.submittedDate || '', returned: p.returnedDate || '' });
+      });
+    }
+  }
+  return rows;
+}
+
+function exportRegisterCsv() {
+  if (!currentJob) return;
+  const rows = registerRows();
+  const cols = [
+    ['section', 'Section'], ['title', 'Title'], ['scope', 'Scope'], ['sectionStatus', 'Section Status'],
+    ['due', 'Due'], ['pkg', 'Package'], ['rev', 'Rev'], ['pkgStatus', 'Package Status'],
+    ['submitted', 'Submitted'], ['returned', 'Returned'],
+    ['total', 'Req Items'], ['met', 'Met'], ['partial', 'Partial'], ['missing', 'Missing'], ['na', 'N/A'],
+    ['outstanding', 'Outstanding Items']
+  ];
+  const esc = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const csv = [cols.map(c => c[1]).join(',')].concat(rows.map(r => cols.map(c => esc(r[c[0]])).join(','))).join('\n');
+  download(`${sanitize(currentJob.name)}-submittal-register.csv`, '﻿' + csv, 'text/csv');
+  showToast('Register exported', 'success');
+}
+
+function printRegister() {
+  if (!currentJob) return;
+  const rows = registerRows();
+  const th = ['Section', 'Title', 'Scope', 'Status', 'Due', 'Package', 'Rev', 'Pkg Status', 'Submitted', 'Returned', 'Met/Total', 'Outstanding'];
+  const trs = rows.map(r => `<tr>
+    <td>${escapeHtml(r.section)}</td><td>${escapeHtml(r.title)}</td><td>${escapeHtml(r.scope)}</td>
+    <td>${escapeHtml(r.sectionStatus)}</td><td>${escapeHtml(r.due)}</td><td>${escapeHtml(r.pkg)}</td>
+    <td>${escapeHtml(String(r.rev))}</td><td>${escapeHtml(r.pkgStatus)}</td><td>${escapeHtml(r.submitted)}</td>
+    <td>${escapeHtml(r.returned)}</td><td>${r.met}/${r.total}</td><td>${escapeHtml(r.outstanding)}</td>
+  </tr>`).join('');
+  const win = window.open('', '_blank');
+  if (!win) { showToast('Pop-up blocked — allow pop-ups to print', 'error'); return; }
+  win.document.write(`<html><head><title>${escapeHtml(currentJob.name)} — Submittal Register</title>
+    <style>
+      body{font-family:-apple-system,Segoe UI,sans-serif;padding:24px;color:#111;}
+      h1{font-size:18px;margin:0 0 4px;} .sub{color:#666;font-size:12px;margin-bottom:16px;}
+      table{border-collapse:collapse;width:100%;font-size:11px;}
+      th,td{border:1px solid #ccc;padding:5px 7px;text-align:left;vertical-align:top;}
+      th{background:#f3f3f3;} tr:nth-child(even){background:#fafafa;}
+    </style></head><body>
+    <h1>${escapeHtml(currentJob.name)} — Submittal Register</h1>
+    <div class="sub">Division 22 &amp; 23 · Generated ${new Date().toLocaleString()} · SpecCheck ${APP_VERSION}</div>
+    <table><thead><tr>${th.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${trs}</tbody></table>
+    </body></html>`);
+  win.document.close();
+  setTimeout(() => win.print(), 350);
+}
+
+function sanitize(name) { return String(name).replace(/[^\w\-]+/g, '_').slice(0, 60) || 'job'; }
+
+// ── Job backup / restore ──
+function relKeysForJob(job) {
+  const keys = [];
+  if (job.hasPdf) keys.push('');
+  (job.specFiles || []).forEach(f => keys.push('::' + f.id));
+  (job.packages || []).forEach(p => (p.revisions || []).forEach(r => { if (r.fileId) keys.push('::pkg::' + r.fileId); }));
+  return keys;
+}
+
+async function exportJob() {
+  if (!currentJob) return;
+  showToast('Preparing backup…', '');
+  const pdfs = {};
+  for (const rk of relKeysForJob(currentJob)) {
+    const blob = await pdfStore.get(currentJob.id + rk);
+    if (blob) pdfs[rk] = await blobToBase64(blob);
+  }
+  const bundle = {
+    format: 'speccheck-job', version: 2, exportedAt: new Date().toISOString(),
+    job: {
+      name: currentJob.name, created: currentJob.created, hasPdf: !!currentJob.hasPdf,
+      pageCount: currentJob.pageCount || 0, specFiles: currentJob.specFiles || [],
+      packages: currentJob.packages || [], sections: currentJob.sections
+    },
+    pdfs
+  };
+  download(`${sanitize(currentJob.name)}.speccheck.json`, JSON.stringify(bundle), 'application/json');
+  showToast('Job backed up — keep this file safe', 'success');
+}
+
+async function importJob(file) {
+  try {
+    const bundle = JSON.parse(await file.text());
+    if (bundle.format !== 'speccheck-job' || !bundle.job) throw new Error('Not a SpecCheck backup file');
+    const j = bundle.job;
+    const newId = 'job_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    const job = {
+      id: newId, name: (j.name || 'Restored job') + '', created: j.created || Date.now(),
+      hasPdf: !!j.hasPdf, pageCount: j.pageCount || 0,
+      specFiles: j.specFiles || [], packages: j.packages || [],
+      sections: j.sections || { div22: [], div23: [] }
+    };
+    // Restore PDFs under the new job id namespace
+    for (const [rk, b64] of Object.entries(bundle.pdfs || {})) {
+      try { await pdfStore.put(newId + rk, base64ToBlob(b64, 'application/pdf')); } catch {}
+    }
+    migrateJob(job);
+    jobs.unshift(job);
+    saveJobs();
+    showToast(`Restored "${job.name}"`, 'success');
+    openJob(newId);
+  } catch (err) {
+    showToast('Could not restore: ' + err.message, 'error');
+    console.error(err);
+  }
+}
+
+// ── Tabs / progress / toast ──
+function switchTab(div) {
+  activeTab = div;
+  document.getElementById('tab-div22').classList.toggle('active', div === 'div22');
+  document.getElementById('tab-div23').classList.toggle('active', div === 'div23');
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + div).classList.add('active');
+}
+function setProgress(show, label, pct) {
+  const wrap = document.getElementById('progressWrap');
+  wrap.classList.toggle('show', show);
+  if (label) document.getElementById('progressLabel').textContent = label;
+  if (pct !== undefined) document.getElementById('progressFill').style.width = pct + '%';
+}
+let toastTimer;
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (type ? ' ' + type : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), type === 'error' ? 6000 : 3500);
+}
+
+if (!PDF_OK) {
+  showToast('PDF library failed to load — spec parsing is disabled. Check your connection and reload.', 'error');
+}
+</script>
+</body>
+</html>
