@@ -16,7 +16,8 @@ A single-file web app for mechanical/plumbing contractors to run the submittal s
 
 1. Open `index.html` in a browser (or serve the repo via GitHub Pages — the file must be named `index.html`).
 2. Optional: paste a [Google Gemini API key](https://aistudio.google.com/apikey) in the header to enable automatic checking. The key is stored only in your browser and calls go straight from your browser to Google.
-3. Create a job, upload the spec (drag in all the section PDFs at once if that's how you have them), then open a section, create a submittal package, and upload the vendor PDF. Set statuses, dates, and overrides as the review progresses. Export the register when the GC asks.
+3. Create a job and upload the spec — drag in a combined PDF, all the per-section PDFs, or a `.zip` of them.
+4. Add vendor submittals: drag PDFs (or a `.zip`) onto the **Add Vendor Submittals** zone and each is matched to its section by CSI number and turned into a package — or open a single section and upload/create a package by hand. Set statuses, dates, and overrides as the review progresses, and export the register when the GC asks.
 
 ## Storage & limits
 
