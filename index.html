@@ -110,6 +110,8 @@
   }
   .upload-zone:hover, .upload-zone.drag { border-color: var(--green); background: #0d1a12; }
   .upload-zone.busy { pointer-events: none; opacity: 0.6; }
+  .submittal-zone { margin-top: 14px; padding: 22px 24px; }
+  .submittal-zone:hover, .submittal-zone.drag { border-color: var(--gold); background: #1a1305; }
   .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
   .upload-icon { font-size: 26px; margin-bottom: 8px; display: block; }
   .upload-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
@@ -430,7 +432,7 @@
     <div class="logo-mark">SC</div>
     <div>
       <span class="logo-text">SpecCheck</span>
-      <span class="logo-sub">Submittal Compliance · <span id="versionLabel">v2.1</span></span>
+      <span class="logo-sub">Submittal Compliance · <span id="versionLabel">v2.2</span></span>
     </div>
   </div>
   <div class="header-right">
@@ -474,9 +476,14 @@
   <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
 </div>
 
+<div class="upload-zone submittal-zone" id="submittalZone" style="display:none">
+  <input type="file" id="submittalZoneInput" accept=".pdf,application/pdf,.zip,application/zip" multiple aria-label="Add vendor submittals (PDFs or zip)">
+  <span class="upload-icon">📥</span>
+  <div class="upload-title">Add Vendor Submittals</div>
+  <div class="upload-hint">Drop submittal PDFs or a .zip — each is matched to its section by number and turned into a package</div>
+</div>
+
 <div class="ws-toolbar" id="wsToolbar" style="display:none">
-  <button class="btn" onclick="document.getElementById('submittalZipInput').click()" title="Import a .zip of vendor submittals — matched to sections automatically">📥 Import submittals (zip)</button>
-  <input type="file" id="submittalZipInput" accept=".zip,application/zip" style="display:none">
   <button class="btn" onclick="exportRegisterCsv()" title="Download the submittal register as CSV">⬇ Register (CSV)</button>
   <button class="btn subtle" onclick="printRegister()" title="Open a printable register (Save as PDF)">🖨 Print register</button>
   <span class="spacer"></span>
@@ -570,7 +577,7 @@ async function expandToPdfs(fileList) {
   return pdfs;
 }
 
-const APP_VERSION = 'v2.1.0';
+const APP_VERSION = 'v2.2.0';
 document.getElementById('versionLabel').textContent = APP_VERSION;
 
 // ── Status vocab ──
@@ -935,6 +942,7 @@ function openJob(id) {
     document.getElementById('tabsWrap').style.display = 'none';
     document.getElementById('filterBar').style.display = 'none';
     document.getElementById('wsToolbar').style.display = 'none';
+    document.getElementById('submittalZone').style.display = 'none';
     document.getElementById('statsBar').classList.remove('show');
     resetPanels();
   }
@@ -1010,28 +1018,41 @@ document.getElementById('importJobInput').addEventListener('change', e => {
   if (e.target.files[0]) importJob(e.target.files[0]);
   e.target.value = '';
 });
-document.getElementById('submittalZipInput').addEventListener('change', e => {
-  if (e.target.files[0]) importSubmittalsZip(e.target.files[0]);
+// ── Submittal drop zone (PDFs or zips) ──
+const submittalZone = document.getElementById('submittalZone');
+submittalZone.addEventListener('dragover', e => { e.preventDefault(); submittalZone.classList.add('drag'); });
+submittalZone.addEventListener('dragleave', () => submittalZone.classList.remove('drag'));
+submittalZone.addEventListener('drop', async e => {
+  e.preventDefault();
+  submittalZone.classList.remove('drag');
+  const dropped = [...e.dataTransfer.files];
+  if (dropped.length) importSubmittals(dropped);
+});
+document.getElementById('submittalZoneInput').addEventListener('change', e => {
+  const chosen = [...e.target.files];
   e.target.value = '';
+  if (chosen.length) importSubmittals(chosen);
 });
 
-// ── Bulk-import vendor submittals from a zip ──
+// ── Bulk-import vendor submittals (loose PDFs and/or zips) ──
 // Each PDF is matched to a section by the CSI number in its path/filename;
 // a new package is created and (if a key is set) checked against the spec.
 function normNum(str) { const m = String(str).match(/(2[23])[\s._-]*(\d{2})[\s._-]*(\d{2})(?:\.(\d+))?/); return m ? m[1] + m[2] + m[3] + (m[4] || '') : null; }
 
-async function importSubmittalsZip(file) {
+async function importSubmittals(fileList) {
   if (!currentJob) { showToast('Open a job first', 'error'); return; }
   if (!allSections().length) { showToast('Load the project spec before importing submittals', 'error'); return; }
-  if (!ZIP_OK) { showToast('Zip support failed to load — reload the page', 'error'); return; }
+  if (processingSpec) return;
 
   processingSpec = true;
-  uploadZone.classList.add('busy');
+  submittalZone.classList.add('busy');
   let pdfs;
   try {
-    setProgress(true, 'Reading zip…', 5);
-    pdfs = await extractPdfsFromZip(file);
-  } catch (err) { setProgress(false); showToast('Could not open zip: ' + err.message, 'error'); processingSpec = false; uploadZone.classList.remove('busy'); return; }
+    setProgress(true, 'Reading files…', 5);
+    pdfs = await expandToPdfs(fileList);
+  } catch (err) { setProgress(false); showToast('Could not read files: ' + err.message, 'error'); processingSpec = false; submittalZone.classList.remove('busy'); return; }
+
+  if (!pdfs.length) { setProgress(false); processingSpec = false; submittalZone.classList.remove('busy'); showToast('No PDFs found in that drop', 'error'); return; }
 
   // Index sections by normalized CSI number
   const byNum = {};
@@ -1047,8 +1068,8 @@ async function importSubmittalsZip(file) {
   }
 
   if (!matched.length) {
-    setProgress(false); processingSpec = false; uploadZone.classList.remove('busy');
-    showToast(`No submittals matched a section (${pdfs.length} PDF${pdfs.length === 1 ? '' : 's'} in zip). Filenames need the section number, e.g. "23 07 19".`, 'error');
+    setProgress(false); processingSpec = false; submittalZone.classList.remove('busy');
+    showToast(`No submittals matched a section (${pdfs.length} PDF${pdfs.length === 1 ? '' : 's'}). Filenames need the section number, e.g. "23 07 19".`, 'error');
     return;
   }
 
@@ -1059,7 +1080,7 @@ async function importSubmittalsZip(file) {
     const pkg = {
       id: 'pkg_' + Date.now() + '_' + i, number: nextPackageNumber(section),
       status: 'preparing', sectionIds: [section.id],
-      submittedDate: null, returnedDate: null, note: 'Imported from ' + file.name, revisions: []
+      submittedDate: null, returnedDate: null, note: 'Imported: ' + f.name, revisions: []
     };
     const fileId = 'r_' + Date.now() + '_' + i;
     let stored = false;
@@ -1074,7 +1095,7 @@ async function importSubmittalsZip(file) {
   persistCurrentJob();
   setProgress(false);
   processingSpec = false;
-  uploadZone.classList.remove('busy');
+  submittalZone.classList.remove('busy');
   renderAll();
   refreshDetail();
   let msg = `Imported ${created} submittal${created === 1 ? '' : 's'}` + (apiKey ? `, checked ${checked}` : ' (add a Gemini key to auto-check)');
@@ -1308,6 +1329,7 @@ function renderAll() {
   document.getElementById('tabsWrap').style.display = 'flex';
   document.getElementById('filterBar').style.display = 'flex';
   document.getElementById('wsToolbar').style.display = 'flex';
+  document.getElementById('submittalZone').style.display = 'block';
   document.getElementById('count22').textContent = specSections.div22.length;
   document.getElementById('count23').textContent = specSections.div23.length;
   renderPanel('div22');
